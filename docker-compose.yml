@@ -1,0 +1,10 @@
+services:
+  webagent:
+    build: .
+    env_file: .env
+    environment:
+      - BROWSER_HEADLESS=true
+    volumes:
+      - ./data:/app/data
+    stdin_open: true
+    tty: true

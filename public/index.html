@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebAgent</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --card: #1a1d26; --card-hover: #22252f;
+      --border: #2a2d37; --text: #e4e4e7; --text-muted: #8b8d97;
+      --indigo: #5B5FC7; --indigo-hover: #4a4eb5; --indigo-glow: rgba(91,95,199,0.15);
+      --green: #00c087; --green-bg: rgba(0,192,135,0.1);
+      --red: #ff4757; --red-bg: rgba(255,71,87,0.1);
+      --yellow: #ffb836; --yellow-bg: rgba(255,184,54,0.1);
+      --radius: 10px; --radius-sm: 6px;
+    }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    input, textarea, button { font-family: inherit; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Animations */
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes successPop { 0% { transform: scale(0.95); opacity: 0; } 60% { transform: scale(1.02); } 100% { transform: scale(1); opacity: 1; } }
+    @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalSlideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    .slide-in { animation: slideIn 0.25s ease; }
+    .pulse { animation: pulse 1.5s ease-in-out infinite; }
+    .success-pop { animation: successPop 0.4s ease; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const socket = io();
+
+// ─── Auth Helpers ────────────────────────────────────────────────────────────
+function getToken() { return localStorage.getItem('wa_token'); }
+function setToken(t) { localStorage.setItem('wa_token', t); }
+function clearToken() { localStorage.removeItem('wa_token'); }
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+
+// ─── Status Badge ───────────────────────────────────────────────────────────
+function StatusBadge({ status }) {
+  const colors = {
+    idle: { bg: 'var(--green-bg)', text: 'var(--green)', label: 'Ready' },
+    running: { bg: 'var(--yellow-bg)', text: 'var(--yellow)', label: 'Running...' },
+    disconnected: { bg: 'var(--red-bg)', text: 'var(--red)', label: 'Disconnected' },
+  };
+  const c = colors[status] || colors.idle;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, background:c.bg, padding:'6px 14px', borderRadius:20, fontSize:13, fontWeight:500 }}>
+      <div className={status === 'running' ? 'pulse' : ''} style={{ width:8, height:8, borderRadius:'50%', background:c.text }} />
+      <span style={{ color:c.text }}>{c.label}</span>
+    </div>
+  );
+}
+
+// ─── Action Pill ────────────────────────────────────────────────────────────
+function ActionPill({ action, source }) {
+  const actionColors = {
+    goto: '#3b82f6', clickElement: '#8b5cf6', type: '#f59e0b',
+    getText: '#06b6d4', scroll: '#64748b', back: '#64748b', done: '#00c087',
+  };
+  return (
+    <div style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+      <span style={{
+        display:'inline-block', padding:'2px 10px', borderRadius:12, fontSize:11, fontWeight:600,
+        background: actionColors[action] || '#64748b', color:'#fff',
+      }}>{action}</span>
+      {source === 'recipe' && (
+        <span style={{ fontSize:10, padding:'2px 6px', borderRadius:8, background:'var(--indigo-glow)', color:'var(--indigo)', fontWeight:500 }}>recipe</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Step Row ───────────────────────────────────────────────────────────────
+function StepRow({ step, onClick, isReplay }) {
+  const hasScreenshot = step.screenshot_base64 || step.screenshot_url;
+  return (
+    <div className="slide-in" onClick={onClick} style={{
+      display:'flex', alignItems:'flex-start', gap:10, padding:'8px 10px', cursor: hasScreenshot ? 'pointer' : 'default',
+      borderRadius: 'var(--radius-sm)', transition:'background 0.15s',
+    }} onMouseEnter={e => e.currentTarget.style.background='var(--card-hover)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+      <div style={{
+        width:26, height:26, borderRadius:'50%', background:'var(--border)', display:'flex',
+        alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, flexShrink:0, marginTop:2,
+        color: step.action === 'done' ? 'var(--green)' : 'var(--text-muted)',
+      }}>{step.step_number}</div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+          <ActionPill action={step.action} source={step.source} />
+          {step.params && Object.keys(step.params).length > 0 && (
+            <span style={{ fontSize:11, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {JSON.stringify(step.params).substring(0, 60)}
+            </span>
+          )}
+        </div>
+        {step.thought && <div style={{ fontSize:12, color:'var(--text-muted)', fontStyle:'italic', marginTop:2 }}>{step.thought}</div>}
+        <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {String(step.result || '').substring(0, 100)}
+        </div>
+      </div>
+      {step.screenshot_base64 && (
+        <img src={`data:image/png;base64,${step.screenshot_base64}`} alt="" style={{
+          width:60, height:36, objectFit:'cover', borderRadius:4, border:'1px solid var(--border)', flexShrink:0,
+        }} />
+      )}
+      {!step.screenshot_base64 && step.screenshot_url && (
+        <img src={step.screenshot_url} alt="" style={{
+          width:60, height:36, objectFit:'cover', borderRadius:4, border:'1px solid var(--border)', flexShrink:0,
+        }} />
+      )}
+    </div>
+  );
+}
+
+// ─── Suggestion Chips ───────────────────────────────────────────────────────
+const SUGGESTIONS = [
+  "Find cheapest iPhone 15 on Amazon India",
+  "Get today's top headlines from BBC News",
+  "Search Wikipedia for the history of cricket",
+  "Compare PlayStation 5 prices across stores",
+];
+
+function SuggestionChips({ onSelect }) {
+  return (
+    <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+      {SUGGESTIONS.map((s, i) => (
+        <button key={i} onClick={() => onSelect(s)} style={{
+          background:'var(--card)', border:'1px solid var(--border)', color:'var(--text-muted)',
+          padding:'6px 14px', borderRadius:20, fontSize:12, cursor:'pointer', transition:'all 0.15s',
+        }} onMouseEnter={e => { e.target.style.borderColor='var(--indigo)'; e.target.style.color='var(--text)'; }}
+           onMouseLeave={e => { e.target.style.borderColor='var(--border)'; e.target.style.color='var(--text-muted)'; }}>{s}</button>
+      ))}
+    </div>
+  );
+}
+
+// ─── Recipe Card ────────────────────────────────────────────────────────────
+function RecipeCard({ recipe, onDelete }) {
+  const total = (recipe.success_count || 0) + (recipe.fail_count || 0);
+  const rate = total > 0 ? Math.round((recipe.success_count / total) * 100) : 0;
+  return (
+    <div className="fade-in" style={{
+      background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+      padding:14, display:'flex', justifyContent:'space-between', alignItems:'center',
+    }}>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{recipe.name}</div>
+        <div style={{ display:'flex', gap:12, fontSize:11, color:'var(--text-muted)' }}>
+          <span>{recipe.steps.length} steps</span>
+          <span style={{ color: rate >= 70 ? 'var(--green)' : rate >= 40 ? 'var(--yellow)' : 'var(--red)' }}>{rate}% success</span>
+          <span>{total}x used</span>
+          {recipe.avg_duration_ms > 0 && <span>{(recipe.avg_duration_ms / 1000).toFixed(1)}s avg</span>}
+        </div>
+      </div>
+      <button onClick={() => onDelete(recipe.id)} style={{
+        background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:16,
+        padding:'4px 8px', borderRadius:4, transition:'color 0.15s',
+      }} onMouseEnter={e => e.target.style.color='var(--red)'} onMouseLeave={e => e.target.style.color='var(--text-muted)'} title="Delete recipe">&#x1F5D1;</button>
+    </div>
+  );
+}
+
+// ─── Recent Task Card ───────────────────────────────────────────────────────
+function RecentTaskCard({ task, onClick }) {
+  const statusColors = { completed:'var(--green)', running:'var(--yellow)', failed:'var(--red)', error:'var(--red)', pending:'var(--text-muted)', cancelled:'var(--text-muted)' };
+  const statusLabels = { completed:'Done', running:'Running', failed:'Failed', error:'Error', pending:'Pending', cancelled:'Cancelled' };
+  const ago = getTimeAgo(task.created_at);
+  return (
+    <div onClick={onClick} style={{
+      background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)',
+      padding:'10px 12px', cursor:'pointer', transition:'border-color 0.15s',
+    }} onMouseEnter={e => e.currentTarget.style.borderColor='var(--indigo)'} onMouseLeave={e => e.currentTarget.style.borderColor='var(--border)'}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+        <span style={{ fontSize:12, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:1 }}>{task.instruction}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          <span style={{ fontSize:10, padding:'2px 8px', borderRadius:8, fontWeight:500,
+            background: statusColors[task.status] === 'var(--green)' ? 'var(--green-bg)' : statusColors[task.status] === 'var(--red)' ? 'var(--red-bg)' : 'var(--yellow-bg)',
+            color: statusColors[task.status] || 'var(--text-muted)',
+          }}>{statusLabels[task.status] || task.status}</span>
+          {task.step_count > 0 && <span style={{ fontSize:10, color:'var(--text-muted)' }}>{task.step_count} steps</span>}
+          <span style={{ fontSize:10, color:'var(--text-muted)' }}>{ago}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getTimeAgo(dateStr) {
+  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;
+  return `${Math.floor(seconds/86400)}d ago`;
+}
+
+// ─── Auth Modal ─────────────────────────────────────────────────────────────
+function AuthModal({ onClose, onAuth, message }) {
+  const [tab, setTab] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState('');
+
+  useEffect(() => {
+    fetch('/api/config').then(r => r.json()).then(c => {
+      if (c.googleClientId) {
+        setGoogleClientId(c.googleClientId);
+        loadGoogleScript(c.googleClientId);
+      }
+    }).catch(() => {});
+  }, []);
+
+  function loadGoogleScript(clientId) {
+    if (document.getElementById('google-gsi')) return;
+    const script = document.createElement('script');
+    script.id = 'google-gsi';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google && clientId) {
+        window.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: handleGoogleResponse,
+        });
+        window.google.accounts.id.renderButton(
+          document.getElementById('google-signin-btn'),
+          { theme: 'filled_black', size: 'large', width: 320, text: 'continue_with' }
+        );
+      }
+    };
+    document.head.appendChild(script);
+  }
+
+  async function handleGoogleResponse(response) {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: response.credential }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setToken(data.token);
+      onAuth(data.user);
+    } catch (err) {
+      setError(err.message || 'Google sign-in failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+  // Make handleGoogleResponse available globally for Google callback
+  window._waGoogleCallback = handleGoogleResponse;
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const endpoint = tab === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const body = tab === 'login' ? { email, password } : { username, email, password };
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setToken(data.token);
+      onAuth(data.user);
+    } catch (err) {
+      setError(err.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const inputStyle = {
+    width:'100%', padding:'10px 14px', background:'var(--bg)', border:'1px solid var(--border)',
+    borderRadius:'var(--radius-sm)', color:'var(--text)', fontSize:14, outline:'none',
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center',
+      justifyContent:'center', zIndex:1000, animation:'modalFadeIn 0.2s ease',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+        padding:28, width:380, maxWidth:'90vw', animation:'modalSlideUp 0.3s ease',
+      }}>
+        <div style={{ textAlign:'center', marginBottom:20 }}>
+          <div style={{ fontSize:20, fontWeight:700, marginBottom:4 }}>Welcome to WebAgent</div>
+          {message && <div style={{ fontSize:13, color:'var(--indigo)', marginTop:6 }}>{message}</div>}
+        </div>
+
+        {/* Google Sign In */}
+        {googleClientId && (
+          <div>
+            <div id="google-signin-btn" style={{ display:'flex', justifyContent:'center', marginBottom:16 }}></div>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+              <div style={{ flex:1, height:1, background:'var(--border)' }} />
+              <span style={{ fontSize:12, color:'var(--text-muted)' }}>or</span>
+              <div style={{ flex:1, height:1, background:'var(--border)' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{ display:'flex', gap:0, marginBottom:16 }}>
+          {['login', 'signup'].map(t => (
+            <button key={t} onClick={() => { setTab(t); setError(''); }} style={{
+              flex:1, padding:'8px 0', background: tab === t ? 'var(--indigo-glow)' : 'transparent',
+              border:'1px solid ' + (tab === t ? 'var(--indigo)' : 'var(--border)'),
+              color: tab === t ? 'var(--indigo)' : 'var(--text-muted)',
+              fontSize:13, fontWeight:600, cursor:'pointer',
+              borderRadius: t === 'login' ? '6px 0 0 6px' : '0 6px 6px 0',
+            }}>{t === 'login' ? 'Log In' : 'Sign Up'}</button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {tab === 'signup' && (
+              <input type="text" placeholder="Username" value={username} onChange={e => setUsername(e.target.value)}
+                required style={inputStyle} onFocus={e => e.target.style.borderColor='var(--indigo)'}
+                onBlur={e => e.target.style.borderColor='var(--border)'} />
+            )}
+            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+              required style={inputStyle} onFocus={e => e.target.style.borderColor='var(--indigo)'}
+              onBlur={e => e.target.style.borderColor='var(--border)'} />
+            <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
+              required minLength={6} style={inputStyle} onFocus={e => e.target.style.borderColor='var(--indigo)'}
+              onBlur={e => e.target.style.borderColor='var(--border)'} />
+          </div>
+
+          {error && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)',
+              borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--red)' }}>{error}</div>
+          )}
+
+          <button type="submit" disabled={loading} style={{
+            width:'100%', marginTop:14, padding:'11px', background: loading ? 'var(--border)' : 'var(--indigo)',
+            color:'#fff', border:'none', borderRadius:'var(--radius-sm)', fontSize:14, fontWeight:600,
+            cursor: loading ? 'not-allowed' : 'pointer',
+          }}>{loading ? 'Please wait...' : (tab === 'login' ? 'Log In' : 'Create Account')}</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Replay Viewer ─────────────────────────────────────────────────────
+function TaskReplay({ steps, result, error, onClose }) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const totalSteps = steps.length;
+  const step = steps[currentStep];
+
+  if (!step) return null;
+
+  const screenshotSrc = step.screenshot_base64
+    ? `data:image/png;base64,${step.screenshot_base64}`
+    : step.screenshot_url || null;
+
+  const isLastStep = currentStep === totalSteps - 1;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontSize:13, fontWeight:600 }}>Step {currentStep + 1} of {totalSteps}</span>
+        <button onClick={onClose} style={{
+          background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)',
+          padding:'4px 12px', borderRadius:'var(--radius-sm)', fontSize:12, cursor:'pointer',
+        }}>Back to Live</button>
+      </div>
+
+      {/* Screenshot */}
+      <div style={{ background:'#000', borderRadius:'var(--radius)', overflow:'hidden', minHeight:200 }}>
+        {screenshotSrc ? (
+          <img src={screenshotSrc} alt={`Step ${currentStep + 1}`} style={{ width:'100%', display:'block' }} />
+        ) : (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:200, color:'var(--text-muted)', fontSize:13 }}>
+            No screenshot for this step
+          </div>
+        )}
+      </div>
+
+      {/* Step details */}
+      <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+          <ActionPill action={step.action} source={step.source} />
+          {step.page_url && (
+            <span style={{ fontSize:11, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{step.page_url}</span>
+          )}
+        </div>
+        {step.thought && <div style={{ fontSize:12, color:'var(--text-muted)', fontStyle:'italic', marginBottom:4 }}>{step.thought}</div>}
+        {step.params && Object.keys(step.params).length > 0 && (
+          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4 }}>Params: {JSON.stringify(step.params)}</div>
+        )}
+        {step.result && <div style={{ fontSize:12, color:'var(--text)' }}>{String(step.result).substring(0, 300)}</div>}
+      </div>
+
+      {/* Navigation */}
+      <div style={{ display:'flex', gap:8 }}>
+        <button onClick={() => setCurrentStep(Math.max(0, currentStep - 1))} disabled={currentStep === 0} style={{
+          flex:1, padding:'10px', background: currentStep === 0 ? 'var(--border)' : 'var(--card)',
+          border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text)',
+          fontSize:13, fontWeight:500, cursor: currentStep === 0 ? 'not-allowed' : 'pointer',
+        }}>Previous</button>
+        <button onClick={() => setCurrentStep(Math.min(totalSteps - 1, currentStep + 1))} disabled={isLastStep} style={{
+          flex:1, padding:'10px', background: isLastStep ? 'var(--border)' : 'var(--indigo)',
+          border:'none', borderRadius:'var(--radius-sm)', color:'#fff',
+          fontSize:13, fontWeight:500, cursor: isLastStep ? 'not-allowed' : 'pointer',
+        }}>Next</button>
+      </div>
+
+      {/* Progress dots */}
+      <div style={{ display:'flex', justifyContent:'center', gap:4, flexWrap:'wrap' }}>
+        {steps.map((_, i) => (
+          <div key={i} onClick={() => setCurrentStep(i)} style={{
+            width:8, height:8, borderRadius:'50%', cursor:'pointer',
+            background: i === currentStep ? 'var(--indigo)' : i < currentStep ? 'var(--green)' : 'var(--border)',
+            transition:'background 0.2s',
+          }} />
+        ))}
+      </div>
+
+      {/* Final result */}
+      {isLastStep && result && (
+        <div className="success-pop" style={{ background:'var(--green-bg)', border:'1px solid rgba(0,192,135,0.3)', borderRadius:'var(--radius-sm)', padding:14 }}>
+          <div style={{ fontSize:11, fontWeight:600, color:'var(--green)', marginBottom:6, textTransform:'uppercase' }}>Result</div>
+          <div style={{ fontSize:13, lineHeight:1.5 }}>{result}</div>
+        </div>
+      )}
+      {isLastStep && error && (
+        <div style={{ background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)', borderRadius:'var(--radius-sm)', padding:14 }}>
+          <div style={{ fontSize:11, fontWeight:600, color:'var(--red)', marginBottom:6, textTransform:'uppercase' }}>Error</div>
+          <div style={{ fontSize:13 }}>{error}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Template Card ───────────────────────────────────────────────────────
+function TemplateCard({ template, onClick }) {
+  const catColors = {
+    shopping: { bg: 'rgba(245,158,11,0.1)', text: '#f59e0b' },
+    research: { bg: 'rgba(59,130,246,0.1)', text: '#3b82f6' },
+    monitoring: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6' },
+    travel: { bg: 'rgba(6,182,212,0.1)', text: '#06b6d4' },
+    news: { bg: 'rgba(239,68,68,0.1)', text: '#ef4444' },
+    utilities: { bg: 'rgba(0,192,135,0.1)', text: '#00c087' },
+  };
+  const cc = catColors[template.category] || catColors.utilities;
+  return (
+    <div onClick={onClick} className="fade-in" style={{
+      background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+      padding:14, cursor:'pointer', transition:'all 0.15s', minWidth:0,
+    }} onMouseEnter={e => { e.currentTarget.style.borderColor='var(--indigo)'; e.currentTarget.style.transform='translateY(-1px)'; }}
+       onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.transform='none'; }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+        <span style={{ fontSize:20 }}>{template.icon}</span>
+        <span style={{ fontSize:13, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{template.name}</span>
+      </div>
+      <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:8, lineHeight:1.4,
+        overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>{template.description}</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <span style={{ fontSize:10, padding:'2px 8px', borderRadius:8, background:cc.bg, color:cc.text, fontWeight:500, textTransform:'capitalize' }}>{template.category}</span>
+        {template.usage_count > 0 && <span style={{ fontSize:10, color:'var(--text-muted)' }}>{template.usage_count}x used</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Template Modal ──────────────────────────────────────────────────────
+function TemplateModal({ template, onClose, onRun }) {
+  const [values, setValues] = useState(() => {
+    const init = {};
+    template.variables.forEach(v => { init[v.name] = ''; });
+    return init;
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  function setValue(name, val) {
+    setValues(prev => ({ ...prev, [name]: val }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    // Validate required
+    for (const v of template.variables) {
+      if (v.required !== false && !values[v.name]?.trim()) {
+        setError(v.label + ' is required');
+        return;
+      }
+    }
+    setLoading(true);
+    try {
+      await onRun(template.id, values);
+    } catch (err) {
+      setError(err.message || 'Failed to run template');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const inputStyle = {
+    width:'100%', padding:'10px 14px', background:'var(--bg)', border:'1px solid var(--border)',
+    borderRadius:'var(--radius-sm)', color:'var(--text)', fontSize:14, outline:'none',
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center',
+      justifyContent:'center', zIndex:1000, animation:'modalFadeIn 0.2s ease',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+        padding:28, width:420, maxWidth:'90vw', animation:'modalSlideUp 0.3s ease',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+          <span style={{ fontSize:28 }}>{template.icon}</span>
+          <div>
+            <div style={{ fontSize:18, fontWeight:700 }}>{template.name}</div>
+            <div style={{ fontSize:13, color:'var(--text-muted)' }}>{template.description}</div>
+          </div>
+        </div>
+        <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:16, padding:'8px 12px', background:'var(--bg)', borderRadius:'var(--radius-sm)' }}>
+          {template.instruction_template}
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {template.variables.map(v => (
+              <div key={v.name}>
+                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>
+                  {v.label} {v.required !== false && <span style={{ color:'var(--red)' }}>*</span>}
+                </label>
+                {v.type === 'select' ? (
+                  <select value={values[v.name]} onChange={e => setValue(v.name, e.target.value)}
+                    style={{ ...inputStyle, cursor:'pointer' }}
+                    onFocus={e => e.target.style.borderColor='var(--indigo)'}
+                    onBlur={e => e.target.style.borderColor='var(--border)'}>
+                    <option value="">Select...</option>
+                    {(v.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                ) : (
+                  <input type={v.type === 'url' ? 'url' : 'text'} placeholder={v.placeholder || ''}
+                    value={values[v.name]} onChange={e => setValue(v.name, e.target.value)}
+                    style={inputStyle}
+                    onFocus={e => e.target.style.borderColor='var(--indigo)'}
+                    onBlur={e => e.target.style.borderColor='var(--border)'} />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)',
+              borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--red)' }}>{error}</div>
+          )}
+
+          <div style={{ display:'flex', gap:8, marginTop:16 }}>
+            <button type="button" onClick={onClose} style={{
+              flex:1, padding:'11px', background:'transparent', border:'1px solid var(--border)',
+              borderRadius:'var(--radius-sm)', color:'var(--text-muted)', fontSize:14, cursor:'pointer',
+            }}>Cancel</button>
+            <button type="submit" disabled={loading} style={{
+              flex:2, padding:'11px', background: loading ? 'var(--border)' : 'var(--indigo)',
+              color:'#fff', border:'none', borderRadius:'var(--radius-sm)', fontSize:14, fontWeight:600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}>{loading ? 'Running...' : 'Run Template'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Schedule Card ───────────────────────────────────────────────────────
+function ScheduleCard({ schedule, onToggle, onDelete }) {
+  const freqLabels = {
+    hourly: 'Runs every hour',
+    daily: 'Runs daily at ' + formatTime(schedule.time),
+    weekly: 'Runs ' + dayName(schedule.day_of_week) + ' at ' + formatTime(schedule.time),
+  };
+  return (
+    <div className="fade-in" style={{
+      background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+      padding:14, display:'flex', alignItems:'center', gap:12,
+    }}>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:2 }}>{schedule.name}</div>
+        <div style={{ fontSize:12, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', marginBottom:4 }}>{schedule.instruction}</div>
+        <div style={{ display:'flex', gap:12, fontSize:11, color:'var(--text-muted)' }}>
+          <span>{freqLabels[schedule.frequency] || schedule.frequency}</span>
+          <span>{schedule.run_count}x run</span>
+          {schedule.next_run && schedule.active && <span>Next: {new Date(schedule.next_run).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</span>}
+        </div>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+        {/* Toggle switch */}
+        <div onClick={() => onToggle(schedule.id, !schedule.active)} style={{
+          width:36, height:20, borderRadius:10, cursor:'pointer', transition:'background 0.2s', position:'relative',
+          background: schedule.active ? 'var(--green)' : 'var(--border)',
+        }}>
+          <div style={{
+            position:'absolute', top:2, width:16, height:16, borderRadius:'50%', background:'#fff', transition:'left 0.2s',
+            left: schedule.active ? 18 : 2,
+          }} />
+        </div>
+        <button onClick={() => onDelete(schedule.id)} style={{
+          background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:14, padding:'4px 6px',
+        }} onMouseEnter={e => e.target.style.color='var(--red)'} onMouseLeave={e => e.target.style.color='var(--text-muted)'}>&#x1F5D1;</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Schedule Modal ──────────────────────────────────────────────────────
+function ScheduleModal({ onClose, onCreate, templates }) {
+  const [name, setName] = useState('');
+  const [instruction, setInstruction] = useState('');
+  const [frequency, setFrequency] = useState('daily');
+  const [time, setTime] = useState('09:00');
+  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // Flatten templates for picking
+  const allTemplates = [];
+  if (templates) {
+    Object.values(templates).forEach(cat => cat.forEach(t => allTemplates.push(t)));
+  }
+
+  function pickTemplate(t) {
+    setName(t.name);
+    setInstruction(t.instruction_template);
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim() || !instruction.trim()) {
+      setError('Name and instruction are required');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await onCreate({
+        name: name.trim(),
+        instruction: instruction.trim(),
+        frequency,
+        time,
+        day_of_week: frequency === 'weekly' ? dayOfWeek : undefined,
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to create schedule');
+      setLoading(false);
+    }
+  }
+
+  const inputStyle = {
+    width:'100%', padding:'10px 14px', background:'var(--bg)', border:'1px solid var(--border)',
+    borderRadius:'var(--radius-sm)', color:'var(--text)', fontSize:14, outline:'none',
+  };
+
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center',
+      justifyContent:'center', zIndex:1000, animation:'modalFadeIn 0.2s ease',
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+        padding:28, width:460, maxWidth:'90vw', maxHeight:'85vh', overflowY:'auto', animation:'modalSlideUp 0.3s ease',
+      }}>
+        <div style={{ fontSize:18, fontWeight:700, marginBottom:16 }}>Create Schedule</div>
+
+        {allTemplates.length > 0 && (
+          <div style={{ marginBottom:14 }}>
+            <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:6 }}>Quick pick from template</label>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+              {allTemplates.slice(0, 6).map(t => (
+                <button key={t.id} type="button" onClick={() => pickTemplate(t)} style={{
+                  background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text-muted)',
+                  padding:'4px 10px', borderRadius:12, fontSize:11, cursor:'pointer',
+                }} onMouseEnter={e => e.target.style.borderColor='var(--indigo)'} onMouseLeave={e => e.target.style.borderColor='var(--border)'}>{t.icon} {t.name}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div>
+              <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>Schedule Name <span style={{ color:'var(--red)' }}>*</span></label>
+              <input type="text" placeholder="e.g. Morning News" value={name} onChange={e => setName(e.target.value)} style={inputStyle}
+                onFocus={e => e.target.style.borderColor='var(--indigo)'} onBlur={e => e.target.style.borderColor='var(--border)'} />
+            </div>
+            <div>
+              <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>Task Instruction <span style={{ color:'var(--red)' }}>*</span></label>
+              <textarea rows={3} placeholder="What should the agent do?" value={instruction} onChange={e => setInstruction(e.target.value)}
+                style={{ ...inputStyle, resize:'none' }}
+                onFocus={e => e.target.style.borderColor='var(--indigo)'} onBlur={e => e.target.style.borderColor='var(--border)'} />
+            </div>
+            <div>
+              <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>Frequency</label>
+              <div style={{ display:'flex', gap:0 }}>
+                {['hourly', 'daily', 'weekly'].map(f => (
+                  <button key={f} type="button" onClick={() => setFrequency(f)} style={{
+                    flex:1, padding:'8px 0', background: frequency === f ? 'var(--indigo-glow)' : 'transparent',
+                    border:'1px solid ' + (frequency === f ? 'var(--indigo)' : 'var(--border)'),
+                    color: frequency === f ? 'var(--indigo)' : 'var(--text-muted)',
+                    fontSize:12, fontWeight:600, cursor:'pointer',
+                    borderRadius: f === 'hourly' ? '6px 0 0 6px' : f === 'weekly' ? '0 6px 6px 0' : '0',
+                  }}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
+                ))}
+              </div>
+            </div>
+            {frequency !== 'hourly' && (
+              <div style={{ display:'flex', gap:10 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>Time</label>
+                  <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inputStyle}
+                    onFocus={e => e.target.style.borderColor='var(--indigo)'} onBlur={e => e.target.style.borderColor='var(--border)'} />
+                </div>
+                {frequency === 'weekly' && (
+                  <div style={{ flex:1 }}>
+                    <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>Day</label>
+                    <select value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))} style={{ ...inputStyle, cursor:'pointer' }}
+                      onFocus={e => e.target.style.borderColor='var(--indigo)'} onBlur={e => e.target.style.borderColor='var(--border)'}>
+                      {days.map((d, i) => <option key={i} value={i}>{d}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div style={{ marginTop:10, padding:'8px 12px', background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)',
+              borderRadius:'var(--radius-sm)', fontSize:12, color:'var(--red)' }}>{error}</div>
+          )}
+
+          <div style={{ display:'flex', gap:8, marginTop:16 }}>
+            <button type="button" onClick={onClose} style={{
+              flex:1, padding:'11px', background:'transparent', border:'1px solid var(--border)',
+              borderRadius:'var(--radius-sm)', color:'var(--text-muted)', fontSize:14, cursor:'pointer',
+            }}>Cancel</button>
+            <button type="submit" disabled={loading} style={{
+              flex:2, padding:'11px', background: loading ? 'var(--border)' : 'var(--indigo)',
+              color:'#fff', border:'none', borderRadius:'var(--radius-sm)', fontSize:14, fontWeight:600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+            }}>{loading ? 'Creating...' : 'Create Schedule'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Notification Dropdown ───────────────────────────────────────────────
+function NotificationDropdown({ notifications, onClose, onMarkRead }) {
+  return (
+    <div style={{
+      position:'absolute', top:'100%', right:0, marginTop:8, width:340, maxHeight:400, overflowY:'auto',
+      background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+      boxShadow:'0 8px 32px rgba(0,0,0,0.4)', zIndex:100, animation:'modalSlideUp 0.2s ease',
+    }}>
+      <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+        <span style={{ fontSize:13, fontWeight:600 }}>Notifications</span>
+        <button onClick={onMarkRead} style={{
+          background:'transparent', border:'none', color:'var(--indigo)', fontSize:11, cursor:'pointer', fontWeight:500,
+        }}>Mark all read</button>
+      </div>
+      {notifications.length === 0 ? (
+        <div style={{ padding:20, textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>No notifications yet</div>
+      ) : notifications.map(n => (
+        <div key={n.id} style={{
+          padding:'10px 16px', borderBottom:'1px solid var(--border)',
+          background: n.read ? 'transparent' : 'rgba(91,95,199,0.05)',
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+            <span style={{ fontSize:12 }}>{n.type === 'schedule_complete' ? '\u2705' : '\u274C'}</span>
+            <span style={{ fontSize:12, fontWeight:600 }}>{n.title}</span>
+          </div>
+          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:2 }}>{n.message}</div>
+          <div style={{ fontSize:10, color:'var(--text-muted)' }}>{getTimeAgo(n.created_at)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatTime(t) {
+  if (!t) return '9:00 AM';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  return ((h % 12) || 12) + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+}
+
+function dayName(d) {
+  return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d] || 'Monday';
+}
+
+// ─── App ────────────────────────────────────────────────────────────────────
+function App() {
+  const [connected, setConnected] = useState(socket.connected);
+  const [instruction, setInstruction] = useState('');
+  const [agentStatus, setAgentStatus] = useState('idle');
+  const [currentTask, setCurrentTask] = useState(null);
+  const [steps, setSteps] = useState([]);
+  const [taskResult, setTaskResult] = useState(null);
+  const [taskError, setTaskError] = useState(null);
+  const [taskMode, setTaskMode] = useState(null);
+  const [recipeSaved, setRecipeSaved] = useState(false);
+  const [recentTasks, setRecentTasks] = useState([]);
+  const [recipes, setRecipes] = useState([]);
+  const [recipesOpen, setRecipesOpen] = useState(false);
+  const [expandedScreenshot, setExpandedScreenshot] = useState(null);
+  const [queuePosition, setQueuePosition] = useState(null);
+  const stepLogRef = useRef(null);
+  const screenshotRef = useRef(null);
+
+  // Auth state
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [tasksRemaining, setTasksRemaining] = useState(null);
+
+  // Replay state
+  const [replayMode, setReplayMode] = useState(false);
+  const [replaySteps, setReplaySteps] = useState([]);
+  const [replayResult, setReplayResult] = useState(null);
+  const [replayError, setReplayError] = useState(null);
+
+  // Templates state
+  const [templates, setTemplates] = useState({});
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+
+  // Schedules state
+  const [schedules, setSchedules] = useState([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // ─── Persist auth: validate token on load ─────────────────────────────
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      fetch('/api/auth/me', { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+        .then(data => {
+          setUser(data.user);
+          // Authenticate the socket
+          socket.emit('auth', token);
+        })
+        .catch(() => { clearToken(); });
+    }
+  }, []);
+
+  // Fetch initial data
+  useEffect(() => {
+    fetchTasks();
+    fetchTemplates();
+    fetch('/api/recipes').then(r => r.json()).then(setRecipes).catch(() => {});
+    fetch('/api/status').then(r => r.json()).then(s => setAgentStatus(s.agent)).catch(() => {});
+  }, []);
+
+  // Re-fetch tasks, schedules, notifications when user changes
+  useEffect(() => {
+    fetchTasks();
+    if (user) {
+      fetchSchedules();
+      fetchNotifications();
+    } else {
+      setSchedules([]);
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  }, [user]);
+
+  function fetchTasks() {
+    fetch('/api/tasks', { headers: authHeaders() })
+      .then(r => r.json())
+      .then(data => {
+        setRecentTasks(data.tasks || []);
+      })
+      .catch(() => {});
+  }
+
+  function fetchTemplates() {
+    fetch('/api/templates').then(r => r.json()).then(data => {
+      setTemplates(data.templates || {});
+    }).catch(() => {});
+  }
+
+  function fetchSchedules() {
+    fetch('/api/schedules', { headers: authHeaders() }).then(r => r.json()).then(data => {
+      setSchedules(data.schedules || []);
+    }).catch(() => {});
+  }
+
+  function fetchNotifications() {
+    fetch('/api/schedules/notifications', { headers: authHeaders() }).then(r => r.json()).then(data => {
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unread || 0);
+    }).catch(() => {});
+  }
+
+  // Socket.IO events
+  useEffect(() => {
+    socket.on('connect', () => setConnected(true));
+    socket.on('disconnect', () => setConnected(false));
+
+    socket.on('task:start', ({ taskId, mode, recipeName }) => {
+      setAgentStatus('running');
+      setTaskMode(mode);
+      setQueuePosition(null);
+    });
+
+    socket.on('task:step', ({ taskId, step }) => {
+      setSteps(prev => [...prev, step]);
+      setTimeout(() => {
+        if (stepLogRef.current) stepLogRef.current.scrollTop = stepLogRef.current.scrollHeight;
+      }, 50);
+    });
+
+    socket.on('task:complete', ({ taskId, result, recipe_saved, mode, duration_ms }) => {
+      setAgentStatus('idle');
+      setTaskResult({ result, duration_ms });
+      setRecipeSaved(recipe_saved);
+      fetchTasks();
+      fetch('/api/recipes').then(r => r.json()).then(setRecipes).catch(() => {});
+      // Update remaining count & notifications
+      if (user) {
+        fetch('/api/auth/me', { headers: authHeaders() })
+          .then(r => r.json())
+          .then(data => {
+            setUser(data.user);
+            const limit = 5; // free plan
+            setTasksRemaining(limit - (data.user.tasks_today || 0));
+          }).catch(() => {});
+        fetchNotifications();
+      }
+    });
+
+    socket.on('task:error', ({ taskId, error }) => {
+      setAgentStatus('idle');
+      setTaskError(error);
+    });
+
+    socket.on('task:queued', ({ taskId, position }) => {
+      setQueuePosition(position);
+    });
+
+    return () => {
+      socket.off('connect'); socket.off('disconnect');
+      socket.off('task:start'); socket.off('task:step');
+      socket.off('task:complete'); socket.off('task:error');
+      socket.off('task:queued');
+    };
+  }, [user]);
+
+  function handleAuth(userData) {
+    setUser(userData);
+    setShowAuthModal(false);
+    setAuthMessage('');
+    // Authenticate socket
+    const token = getToken();
+    if (token) socket.emit('auth', token);
+    fetchTasks();
+    // Set remaining tasks
+    const limit = 5;
+    setTasksRemaining(limit - (userData.tasks_today || 0));
+  }
+
+  function handleSignOut() {
+    clearToken();
+    setUser(null);
+    setRecentTasks([]);
+    setTasksRemaining(null);
+    setSchedules([]);
+    setNotifications([]);
+    setUnreadCount(0);
+  }
+
+  async function runTemplate(templateId, variables) {
+    if (!user) {
+      setAuthMessage('Sign in to run templates');
+      setShowAuthModal(true);
+      return;
+    }
+    const res = await fetch(`/api/templates/${templateId}/run`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ variables }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to run template');
+    setSelectedTemplate(null);
+    // Submit the filled instruction as a task
+    submitTask(data.instruction);
+  }
+
+  async function createSchedule(scheduleData) {
+    const res = await fetch('/api/schedules', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(scheduleData),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create schedule');
+    setShowScheduleModal(false);
+    fetchSchedules();
+  }
+
+  async function toggleSchedule(id, active) {
+    await fetch(`/api/schedules/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ active }),
+    });
+    fetchSchedules();
+  }
+
+  async function deleteSchedule(id) {
+    await fetch(`/api/schedules/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    fetchSchedules();
+  }
+
+  async function markNotificationsRead() {
+    await fetch('/api/schedules/notifications/read', {
+      method: 'PUT',
+      headers: authHeaders(),
+    });
+    setUnreadCount(0);
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  }
+
+  const submitTask = useCallback(async (instr) => {
+    const text = (instr || instruction).trim();
+    if (!text) return;
+
+    // Check auth
+    if (!user) {
+      setAuthMessage('Sign in to run tasks');
+      setShowAuthModal(true);
+      return;
+    }
+
+    setInstruction('');
+    setSteps([]);
+    setTaskResult(null);
+    setTaskError(null);
+    setRecipeSaved(false);
+    setTaskMode(null);
+    setExpandedScreenshot(null);
+    setQueuePosition(null);
+    setReplayMode(false);
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ instruction: text }),
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        setTaskError(data.error);
+        return;
+      }
+      if (!res.ok) {
+        setTaskError(data.error || 'Failed to submit task');
+        return;
+      }
+
+      setCurrentTask(data);
+      if (data.queue_position) setQueuePosition(data.queue_position);
+      if (data.tasks_remaining != null) setTasksRemaining(data.tasks_remaining);
+    } catch (err) {
+      setTaskError('Failed to submit task');
+    }
+  }, [instruction, user]);
+
+  const cancelTask = useCallback(() => {
+    if (currentTask) {
+      socket.emit('task:cancel', { taskId: currentTask.id });
+    }
+  }, [currentTask]);
+
+  const deleteRecipeHandler = useCallback(async (id) => {
+    await fetch(`/api/recipes/${id}`, { method: 'DELETE', headers: authHeaders() });
+    setRecipes(prev => prev.filter(r => r.id !== id));
+  }, []);
+
+  const viewPastTask = useCallback(async (taskId) => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const task = await res.json();
+      setCurrentTask(task);
+      setReplayMode(true);
+      setReplaySteps(task.steps || []);
+      setReplayResult(task.status === 'completed' ? task.result : null);
+      setReplayError(task.status === 'failed' || task.status === 'error' ? task.error : null);
+      // Also populate the steps for the step log
+      setSteps(task.steps || []);
+      setTaskResult(task.status === 'completed' ? { result: task.result, duration_ms: task.duration_ms } : null);
+      setTaskError(task.status === 'failed' || task.status === 'error' ? task.error : null);
+      setTaskMode(task.mode);
+      setRecipeSaved(false);
+    } catch {}
+  }, []);
+
+  const lastScreenshot = steps.length > 0 ? steps[steps.length - 1].screenshot_base64 : null;
+  const lastUrl = steps.length > 0 ? (steps[steps.length - 1].page_url || null) : null;
+  const lastAction = steps.length > 0 ? steps[steps.length - 1].action : null;
+  const isRunning = agentStatus === 'running';
+  const effectiveStatus = !connected ? 'disconnected' : agentStatus;
+
+  const actionLabels = {
+    goto: 'Navigating...', clickElement: 'Clicking element...', type: 'Typing text...',
+    getText: 'Reading page...', scroll: 'Scrolling...', back: 'Going back...', done: 'Complete',
+  };
+
+  // User initial/avatar for header
+  // Close notification dropdown when clicking elsewhere
+  useEffect(() => {
+    if (!showNotifications) return;
+    function handleClick(e) {
+      if (!e.target.closest('[data-notif-area]')) setShowNotifications(false);
+    }
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [showNotifications]);
+
+  const userInitial = user ? (user.username || user.email || '?')[0].toUpperCase() : '';
+
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column' }}>
+      {/* Top Bar */}
+      <header style={{
+        display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 24px',
+        borderBottom:'1px solid var(--border)', background:'var(--card)',
+      }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ width:10, height:10, borderRadius:'50%', background:'var(--indigo)' }} />
+          <span style={{ fontSize:18, fontWeight:700 }}>WebAgent</span>
+        </div>
+        <StatusBadge status={effectiveStatus} />
+        <div style={{ display:'flex', alignItems:'center', gap:16, fontSize:12, color:'var(--text-muted)' }}>
+          <span style={{ background:'var(--indigo-glow)', color:'var(--indigo)', padding:'4px 12px', borderRadius:12, fontWeight:500 }}>
+            {recipes.length} recipe{recipes.length !== 1 ? 's' : ''} learned
+          </span>
+          {user && (
+            <div data-notif-area="true" style={{ position:'relative' }}>
+              <button onClick={() => { setShowNotifications(!showNotifications); if (!showNotifications) fetchNotifications(); }} style={{
+                background:'transparent', border:'none', cursor:'pointer', position:'relative', padding:4, fontSize:18,
+                color: unreadCount > 0 ? 'var(--yellow)' : 'var(--text-muted)',
+              }}>{'\u{1F514}'}
+                {unreadCount > 0 && (
+                  <span style={{
+                    position:'absolute', top:-2, right:-4, width:16, height:16, borderRadius:'50%',
+                    background:'var(--red)', color:'#fff', fontSize:9, fontWeight:700,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                  }}>{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </button>
+              {showNotifications && (
+                <NotificationDropdown
+                  notifications={notifications}
+                  onClose={() => setShowNotifications(false)}
+                  onMarkRead={markNotificationsRead}
+                />
+              )}
+            </div>
+          )}
+          {user ? (
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              {user.profile_picture ? (
+                <img src={user.profile_picture} alt="" style={{ width:28, height:28, borderRadius:'50%', border:'2px solid var(--indigo)' }} />
+              ) : (
+                <div style={{ width:28, height:28, borderRadius:'50%', background:'var(--indigo)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'#fff' }}>
+                  {userInitial}
+                </div>
+              )}
+              <span style={{ fontWeight:500, color:'var(--text)' }}>{user.username}</span>
+              <button onClick={handleSignOut} style={{
+                background:'transparent', border:'1px solid var(--border)', color:'var(--text-muted)',
+                padding:'4px 10px', borderRadius:'var(--radius-sm)', fontSize:11, cursor:'pointer',
+              }} onMouseEnter={e => e.target.style.borderColor='var(--red)'}
+                 onMouseLeave={e => e.target.style.borderColor='var(--border)'}>Sign Out</button>
+            </div>
+          ) : (
+            <button onClick={() => { setAuthMessage(''); setShowAuthModal(true); }} style={{
+              background:'var(--indigo)', border:'none', color:'#fff', padding:'6px 16px',
+              borderRadius:'var(--radius-sm)', fontSize:12, fontWeight:600, cursor:'pointer',
+            }}>Sign In</button>
+          )}
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div style={{ flex:1, display:'flex', gap:0 }}>
+        {/* Left Column */}
+        <div style={{ width:'55%', padding:24, display:'flex', flexDirection:'column', gap:20, borderRight:'1px solid var(--border)', overflowY:'auto' }}>
+          {/* Task Input */}
+          <div>
+            <textarea
+              value={instruction}
+              onChange={e => setInstruction(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitTask(); } }}
+              placeholder="What would you like me to do?"
+              rows={3}
+              style={{
+                width:'100%', background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+                padding:'14px 16px', color:'var(--text)', fontSize:14, resize:'none', outline:'none',
+                transition:'border-color 0.2s',
+              }}
+              onFocus={e => e.target.style.borderColor='var(--indigo)'}
+              onBlur={e => e.target.style.borderColor='var(--border)'}
+            />
+            <button
+              onClick={() => submitTask()}
+              disabled={!instruction.trim() || !connected}
+              style={{
+                width:'100%', marginTop:10, padding:'12px 20px', background: (!instruction.trim() || !connected) ? 'var(--border)' : 'var(--indigo)',
+                color:'#fff', border:'none', borderRadius:'var(--radius)', fontSize:14, fontWeight:600,
+                cursor: (!instruction.trim() || !connected) ? 'not-allowed' : 'pointer', transition:'background 0.2s',
+              }}
+              onMouseEnter={e => { if (instruction.trim() && connected) e.target.style.background='var(--indigo-hover)'; }}
+              onMouseLeave={e => { if (instruction.trim() && connected) e.target.style.background='var(--indigo)'; }}
+            >
+              {isRunning ? 'Task Running...' : 'Run Task'}
+            </button>
+            {/* Rate limit info */}
+            {user && tasksRemaining != null && (
+              <div style={{ marginTop:8, fontSize:12, color:'var(--text-muted)', textAlign:'center' }}>
+                {tasksRemaining > 0
+                  ? `${tasksRemaining} of 5 tasks remaining today`
+                  : <span style={{ color:'var(--red)' }}>Daily task limit reached</span>
+                }
+              </div>
+            )}
+            {!user && (
+              <div style={{ marginTop:8, fontSize:12, color:'var(--text-muted)', textAlign:'center' }}>
+                Sign in to run and save tasks
+              </div>
+            )}
+          </div>
+
+          {/* Suggestions */}
+          <div>
+            <h3 style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.05em' }}>Suggested Tasks</h3>
+            <SuggestionChips onSelect={(s) => { setInstruction(s); }} />
+          </div>
+
+          {/* Templates */}
+          {Object.keys(templates).length > 0 && (
+            <div>
+              <h3 style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.05em' }}>Templates</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:8 }}>
+                {Object.entries(templates).map(([cat, items]) =>
+                  items.map(t => (
+                    <TemplateCard key={t.id} template={t} onClick={() => {
+                      if (!user) { setAuthMessage('Sign in to use templates'); setShowAuthModal(true); return; }
+                      setSelectedTemplate(t);
+                    }} />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Task History */}
+          <div>
+            <h3 style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+              {user ? 'Task History' : 'Recent Tasks'}
+            </h3>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {recentTasks.map(t => (
+                <RecentTaskCard key={t.id} task={t} onClick={() => viewPastTask(t.id)} />
+              ))}
+              {recentTasks.length === 0 && (
+                <div style={{ fontSize:13, color:'var(--text-muted)' }}>
+                  {user ? 'No tasks yet. Try one above!' : 'Sign in to see your task history'}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Scheduled Tasks */}
+          {user && (
+            <div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <h3 style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Scheduled Tasks</h3>
+                <button onClick={() => setShowScheduleModal(true)} style={{
+                  background:'var(--indigo-glow)', border:'1px solid rgba(91,95,199,0.3)', color:'var(--indigo)',
+                  padding:'4px 12px', borderRadius:12, fontSize:11, fontWeight:600, cursor:'pointer',
+                }} onMouseEnter={e => e.target.style.background='var(--indigo)'} onMouseLeave={e => e.target.style.background='var(--indigo-glow)'}
+                   onMouseOver={e => e.target.style.color='#fff'} onMouseOut={e => e.target.style.color='var(--indigo)'}>+ Create</button>
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {schedules.map(s => (
+                  <ScheduleCard key={s.id} schedule={s} onToggle={toggleSchedule} onDelete={deleteSchedule} />
+                ))}
+                {schedules.length === 0 && (
+                  <div style={{ fontSize:13, color:'var(--text-muted)', padding:'8px 0' }}>
+                    Set up automated tasks that run on a schedule
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column */}
+        <div style={{ width:'45%', padding:24, display:'flex', flexDirection:'column', gap:16, overflowY:'auto' }}>
+          {/* Replay Mode */}
+          {replayMode && replaySteps.length > 0 ? (
+            <TaskReplay
+              steps={replaySteps}
+              result={replayResult}
+              error={replayError}
+              onClose={() => {
+                setReplayMode(false);
+                setReplaySteps([]);
+                setReplayResult(null);
+                setReplayError(null);
+                setSteps([]);
+                setTaskResult(null);
+                setTaskError(null);
+                setCurrentTask(null);
+              }}
+            />
+          ) : (
+            <>
+              {/* Live Viewer */}
+              <div style={{ background:'var(--card)', borderRadius:'var(--radius)', border:'1px solid var(--border)', overflow:'hidden' }}>
+                {/* Mode banner */}
+                {isRunning && taskMode === 'recipe' && (
+                  <div className="pulse" style={{ background:'var(--indigo-glow)', color:'var(--indigo)', padding:'8px 16px', fontSize:12, fontWeight:600, textAlign:'center' }}>
+                    Using saved recipe — no AI needed
+                  </div>
+                )}
+                {isRunning && taskMode === 'llm' && (
+                  <div style={{ background:'rgba(255,255,255,0.03)', color:'var(--text-muted)', padding:'6px 16px', fontSize:11, textAlign:'center' }}>
+                    AI-powered
+                  </div>
+                )}
+
+                {/* Screenshot area */}
+                <div ref={screenshotRef} style={{ position:'relative', background:'#000', minHeight:200 }}>
+                  {lastScreenshot ? (
+                    <img
+                      src={`data:image/png;base64,${lastScreenshot}`}
+                      alt="Browser screenshot"
+                      style={{ width:'100%', display:'block', transition:'opacity 0.3s' }}
+                    />
+                  ) : (
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:280, color:'var(--text-muted)', fontSize:14 }}>
+                      {queuePosition ? `Queued — position ${queuePosition}` : 'Run a task to see the agent in action'}
+                    </div>
+                  )}
+                </div>
+
+                {/* URL bar */}
+                {lastUrl && (
+                  <div style={{ padding:'8px 16px', borderTop:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', background: isRunning ? 'var(--yellow)' : 'var(--green)' }} />
+                    <span style={{ fontSize:12, color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{lastUrl}</span>
+                  </div>
+                )}
+
+                {/* Progress */}
+                {isRunning && (
+                  <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                      <span style={{ fontSize:12, color:'var(--text-muted)' }}>
+                        Step {steps.length} / {20}
+                      </span>
+                      <span style={{ fontSize:12, color:'var(--yellow)' }}>
+                        {actionLabels[lastAction] || 'Working...'}
+                      </span>
+                    </div>
+                    <div style={{ height:3, background:'var(--border)', borderRadius:2, overflow:'hidden' }}>
+                      <div style={{ height:'100%', background:'var(--indigo)', borderRadius:2, width:`${Math.min((steps.length / 20) * 100, 100)}%`, transition:'width 0.4s' }} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Result */}
+                {taskResult && !isRunning && !replayMode && (
+                  <div className="success-pop" style={{ padding:16, borderTop:'1px solid var(--border)' }}>
+                    <div style={{ background:'var(--green-bg)', border:'1px solid rgba(0,192,135,0.3)', borderRadius:'var(--radius-sm)', padding:14 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'var(--green)', marginBottom:6, textTransform:'uppercase' }}>Result</div>
+                      <div style={{ fontSize:13, lineHeight:1.5 }}>{taskResult.result}</div>
+                      {taskResult.duration_ms && (
+                        <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:8 }}>Completed in {(taskResult.duration_ms / 1000).toFixed(1)}s</div>
+                      )}
+                    </div>
+                    {recipeSaved && (
+                      <div className="fade-in" style={{ marginTop:10, background:'var(--indigo-glow)', border:'1px solid rgba(91,95,199,0.3)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:12, color:'var(--indigo)', fontWeight:500 }}>
+                        Agent learned this task! Next time will be instant.
+                      </div>
+                    )}
+                    <button onClick={() => { setTaskResult(null); setSteps([]); setCurrentTask(null); setTaskError(null); }}
+                      style={{ marginTop:12, width:'100%', padding:'10px', background:'var(--card-hover)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text)', fontSize:13, cursor:'pointer', fontWeight:500 }}>
+                      Run Another Task
+                    </button>
+                  </div>
+                )}
+
+                {/* Error */}
+                {taskError && !isRunning && !replayMode && (
+                  <div className="fade-in" style={{ padding:16, borderTop:'1px solid var(--border)' }}>
+                    <div style={{ background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)', borderRadius:'var(--radius-sm)', padding:14 }}>
+                      <div style={{ fontSize:11, fontWeight:600, color:'var(--red)', marginBottom:6, textTransform:'uppercase' }}>Error</div>
+                      <div style={{ fontSize:13 }}>{taskError}</div>
+                    </div>
+                    <button onClick={() => { if (currentTask) submitTask(currentTask.instruction); }}
+                      style={{ marginTop:12, width:'100%', padding:'10px', background:'var(--red-bg)', border:'1px solid rgba(255,71,87,0.3)', borderRadius:'var(--radius-sm)', color:'var(--red)', fontSize:13, cursor:'pointer', fontWeight:500 }}>
+                      Try Again
+                    </button>
+                  </div>
+                )}
+
+                {/* Cancel button */}
+                {isRunning && (
+                  <div style={{ padding:'0 16px 12px' }}>
+                    <button onClick={cancelTask} style={{
+                      width:'100%', padding:'8px', background:'transparent', border:'1px solid var(--border)',
+                      borderRadius:'var(--radius-sm)', color:'var(--text-muted)', fontSize:12, cursor:'pointer',
+                    }} onMouseEnter={e => { e.target.style.borderColor='var(--red)'; e.target.style.color='var(--red)'; }}
+                       onMouseLeave={e => { e.target.style.borderColor='var(--border)'; e.target.style.color='var(--text-muted)'; }}>
+                      Cancel Task
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Step Log */}
+              {steps.length > 0 && !replayMode && (
+                <div>
+                  <h3 style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                    Step Log ({steps.length})
+                  </h3>
+                  <div ref={stepLogRef} style={{
+                    background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+                    maxHeight:300, overflowY:'auto', padding:6,
+                  }}>
+                    {steps.map((s, i) => (
+                      <StepRow key={i} step={s} onClick={() => { if (s.screenshot_base64) setExpandedScreenshot(s.screenshot_base64); }} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Recipes Panel */}
+      <div style={{ borderTop:'1px solid var(--border)', background:'var(--card)' }}>
+        <button onClick={() => setRecipesOpen(!recipesOpen)} style={{
+          width:'100%', padding:'12px 24px', background:'transparent', border:'none', color:'var(--text)',
+          display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', fontSize:13, fontWeight:600,
+        }}>
+          <span>Learned Recipes ({recipes.length})</span>
+          <span style={{ fontSize:11, color:'var(--text-muted)', fontWeight:400 }}>
+            {recipesOpen ? 'Collapse' : 'Expand'} — The agent gets faster with every task
+          </span>
+        </button>
+        {recipesOpen && (
+          <div style={{ padding:'0 24px 16px', display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:10 }}>
+            {recipes.map(r => (
+              <RecipeCard key={r.id} recipe={r} onDelete={deleteRecipeHandler} />
+            ))}
+            {recipes.length === 0 && <div style={{ fontSize:13, color:'var(--text-muted)', padding:10 }}>No recipes yet. Complete a task and the agent will learn from it.</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <AuthModal onClose={() => setShowAuthModal(false)} onAuth={handleAuth} message={authMessage} />
+      )}
+
+      {/* Template Modal */}
+      {selectedTemplate && (
+        <TemplateModal template={selectedTemplate} onClose={() => setSelectedTemplate(null)} onRun={runTemplate} />
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <ScheduleModal onClose={() => setShowScheduleModal(false)} onCreate={createSchedule} templates={templates} />
+      )}
+
+      {/* Expanded Screenshot Modal */}
+      {expandedScreenshot && (
+        <div onClick={() => setExpandedScreenshot(null)} style={{
+          position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center',
+          justifyContent:'center', zIndex:1000, cursor:'pointer', padding:40,
+        }}>
+          <img src={`data:image/png;base64,${expandedScreenshot}`} alt="Expanded screenshot" style={{
+            maxWidth:'90vw', maxHeight:'90vh', borderRadius:8, boxShadow:'0 20px 60px rgba(0,0,0,0.5)',
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<style>
+  /* Responsive */
+  @media (max-width: 900px) {
+    header { flex-wrap: wrap; gap: 10px; }
+    header > div:last-child { display: none; }
+  }
+  @media (max-width: 768px) {
+    #root > div > div:nth-child(2) {
+      flex-direction: column !important;
+    }
+    #root > div > div:nth-child(2) > div {
+      width: 100% !important;
+      border-right: none !important;
+      border-bottom: 1px solid var(--border);
+    }
+  }
+</style>
+</body>
+</html>
