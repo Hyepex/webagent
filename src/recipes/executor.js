@@ -20,7 +20,8 @@ function interpolateParams(params, variables) {
 
 async function takeScreenshot(browser) {
   try {
-    return await browser.page.screenshot({ encoding: "base64" });
+    const buf = await browser.page.screenshot();
+    return buf.toString("base64");
   } catch {
     return null;
   }
@@ -101,6 +102,26 @@ async function executeRecipe(recipe, variables, browser, callbacks = {}) {
 
         case "type":
           result = await browser.type(params.selector, params.text);
+          break;
+
+        case "fill":
+          result = await browser.fill(params.label, params.text);
+          break;
+
+        case "clickByRole":
+          result = await browser.clickByRole(params.role, params.name);
+          break;
+
+        case "selectOption":
+          result = await browser.selectOption(params.label, params.value);
+          break;
+
+        case "pickOption":
+          result = await browser.pickOption(params.text);
+          break;
+
+        case "waitForText":
+          result = await browser.waitForText(params.text);
           break;
 
         case "getText":

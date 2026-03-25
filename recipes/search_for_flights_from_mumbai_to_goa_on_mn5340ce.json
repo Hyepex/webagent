@@ -1,0 +1,26 @@
+{
+  "id": "search_for_flights_from_mumbai_to_goa_on_mn5340ce",
+  "name": "Search for flights from Mumbai to Goa on Google Flights",
+  "instruction_pattern": "flights|mumbai|goa|google|flights",
+  "instruction_example": "Search for flights from Mumbai to Goa on Google Flights",
+  "variables": [
+    {
+      "name": "site",
+      "extracted_from": "the website mentioned in the instruction",
+      "default": "google.com"
+    }
+  ],
+  "steps": [
+    {
+      "action": "goto",
+      "params": {
+        "url": "https://www.{{site}}/flights"
+      }
+    }
+  ],
+  "success_count": 1,
+  "fail_count": 0,
+  "avg_duration_ms": 226661,
+  "last_used": "2026-03-24T20:46:00.638Z",
+  "created_at": "2026-03-24T20:46:00.638Z"
+}

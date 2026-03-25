@@ -1417,14 +1417,14 @@ function App() {
                   <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
                       <span style={{ fontSize:12, color:'var(--text-muted)' }}>
-                        Step {steps.length} / {20}
+                        Step {steps.length} / {30}
                       </span>
                       <span style={{ fontSize:12, color:'var(--yellow)' }}>
                         {actionLabels[lastAction] || 'Working...'}
                       </span>
                     </div>
                     <div style={{ height:3, background:'var(--border)', borderRadius:2, overflow:'hidden' }}>
-                      <div style={{ height:'100%', background:'var(--indigo)', borderRadius:2, width:`${Math.min((steps.length / 20) * 100, 100)}%`, transition:'width 0.4s' }} />
+                      <div style={{ height:'100%', background:'var(--indigo)', borderRadius:2, width:`${Math.min((steps.length / 30) * 100, 100)}%`, transition:'width 0.4s' }} />
                     </div>
                   </div>
                 )}

@@ -6,8 +6,8 @@ const log = createLogger("taskLimits");
 
 const LIMITS = {
   maxTaskDuration: 5 * 60 * 1000, // 5 minutes
-  maxStepsPerTask: 20,
-  maxScreenshotsPerTask: 20,
+  maxStepsPerTask: 30,
+  maxScreenshotsPerTask: 30,
   maxConcurrentTasks: 1,
   maxInstructionLength: 500,
 };

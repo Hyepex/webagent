@@ -1,4 +1,4 @@
-const puppeteer = require("puppeteer");
+const { chromium } = require("playwright");
 const config = require("../config");
 const actions = require("./actions");
 const parser = require("./parser");
@@ -12,19 +12,23 @@ const TASK_CONTEXT_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 class BrowserController {
   constructor() {
     this.browser = null;
+    this._defaultContext = null;
     this.page = null;
     this.elements = [];
     this._taskContext = null;
     this._contextTimer = null;
   }
 
+  _contextOptions() {
+    return {
+      viewport: { width: config.browser.viewportWidth, height: config.browser.viewportHeight },
+      userAgent: config.browser.userAgent,
+    };
+  }
+
   async launch() {
     const launchOptions = {
       headless: config.browser.headless,
-      defaultViewport: {
-        width: config.browser.viewportWidth,
-        height: config.browser.viewportHeight,
-      },
       args: config.browser.launchArgs,
     };
 
@@ -32,20 +36,20 @@ class BrowserController {
       launchOptions.executablePath = config.browser.executablePath;
     }
 
-    this.browser = await puppeteer.launch(launchOptions);
-    this.page = (await this.browser.pages())[0];
+    this.browser = await chromium.launch(launchOptions);
+    this._defaultContext = await this.browser.newContext(this._contextOptions());
+    await this._applyStealthScripts(this._defaultContext);
 
-    await this._setupPage(this.page);
+    this.page = await this._defaultContext.newPage();
+    this.page.setDefaultTimeout(config.browser.defaultTimeout);
 
-    log.success(`Launched Chrome (headless=${config.browser.headless}, stealth mode)`);
+    log.success(`Launched Chromium (headless=${config.browser.headless}, stealth mode)`);
   }
 
-  async _setupPage(page) {
-    await page.setUserAgent(config.browser.userAgent);
-    await page.evaluateOnNewDocument(() => {
+  async _applyStealthScripts(context) {
+    await context.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", { get: () => false });
     });
-    page.setDefaultTimeout(config.browser.defaultTimeout);
   }
 
   // Create an isolated browser context for a task
@@ -55,9 +59,10 @@ class BrowserController {
         throw new Error("Browser not launched");
       }
 
-      this._taskContext = await this.browser.createBrowserContext();
+      this._taskContext = await this.browser.newContext(this._contextOptions());
+      await this._applyStealthScripts(this._taskContext);
       this.page = await this._taskContext.newPage();
-      await this._setupPage(this.page);
+      this.page.setDefaultTimeout(config.browser.defaultTimeout);
 
       // Set hard timeout — auto-close context after 5 minutes
       this._contextTimer = setTimeout(() => {
@@ -69,10 +74,10 @@ class BrowserController {
     } catch (err) {
       log.error(`Failed to create task context: ${err.message}`);
       // Fallback to default page
-      if (this.browser) {
-        const pages = await this.browser.pages();
-        this.page = pages[0] || await this.browser.newPage();
-        await this._setupPage(this.page);
+      if (this._defaultContext) {
+        const pages = this._defaultContext.pages();
+        this.page = pages[0] || await this._defaultContext.newPage();
+        this.page.setDefaultTimeout(config.browser.defaultTimeout);
       }
     }
   }
@@ -86,10 +91,6 @@ class BrowserController {
 
     if (this._taskContext) {
       try {
-        const pages = await this._taskContext.pages();
-        for (const p of pages) {
-          await p.close().catch(() => {});
-        }
         await this._taskContext.close();
         log.debug("Closed isolated task context");
       } catch (err) {
@@ -98,11 +99,11 @@ class BrowserController {
       this._taskContext = null;
     }
 
-    // Reset to a default page from the browser
+    // Reset to a default page from the default context
     try {
-      if (this.browser) {
-        const pages = await this.browser.pages();
-        this.page = pages[0] || await this.browser.newPage();
+      if (this._defaultContext) {
+        const pages = this._defaultContext.pages();
+        this.page = pages[0] || await this._defaultContext.newPage();
       }
     } catch {
       this.page = null;
@@ -166,6 +167,51 @@ class BrowserController {
     }
   }
 
+  async fill(label, text) {
+    try {
+      await actions.fillByLabel(this.page, label, text, () => this._settle());
+      return await this.getPageInfo();
+    } catch {
+      return `Could not find input labeled "${label}"`;
+    }
+  }
+
+  async clickByRole(role, name) {
+    try {
+      await actions.clickByRole(this.page, role, name, () => this._settle());
+      return await this.getPageInfo();
+    } catch {
+      return `Could not find ${role} named "${name}"`;
+    }
+  }
+
+  async selectOption(label, value) {
+    try {
+      await actions.selectOption(this.page, label, value, () => this._settle());
+      return await this.getPageInfo();
+    } catch {
+      return `Could not select "${value}" in "${label}"`;
+    }
+  }
+
+  async pickOption(text) {
+    try {
+      await actions.pickOption(this.page, text, () => this._settle());
+      return await this.getPageInfo();
+    } catch {
+      return `Could not find option: "${text}"`;
+    }
+  }
+
+  async waitForText(text) {
+    try {
+      await actions.waitForText(this.page, text);
+      return `Found text: "${text}"`;
+    } catch {
+      return `Text "${text}" did not appear`;
+    }
+  }
+
   async back() {
     await actions.goBack(this.page, () => this._settle());
     return await this.getPageInfo();
@@ -186,10 +232,13 @@ class BrowserController {
   }
 
   async _settle() {
+    await this.page.waitForLoadState("domcontentloaded").catch(() => {});
     await new Promise((r) => setTimeout(r, config.agent.settleDelay));
     try {
-      await this.page.waitForNetworkIdle({ idleTime: 500, timeout: config.agent.networkIdleTimeout });
-    } catch {}
+      await this.page.waitForLoadState("networkidle", { timeout: config.agent.networkIdleTimeout });
+    } catch {
+      // Expected for SPA/polling sites — not an error
+    }
   }
 
   // Check if browser is still alive
@@ -206,6 +255,7 @@ class BrowserController {
       clearTimeout(this._contextTimer);
       this._contextTimer = null;
     }
+    this._defaultContext = null;
     if (this.browser) {
       try {
         await this.browser.close();

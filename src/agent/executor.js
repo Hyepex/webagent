@@ -50,14 +50,20 @@ async function executeAction(browser, action, params) {
 
   const actionFn = async () => {
     switch (action) {
-      case "goto":         return browser.goto(params.url);
+      case "goto":          return browser.goto(params.url);
       case "clickElement":  return browser.clickElement(params.number);
-      case "type":         return browser.type(params.selector, params.text);
-      case "getText":      return browser.getText();
-      case "scroll":       return browser.scroll(params.direction);
-      case "pressEnter":   return browser.pressEnter();
-      case "back":         return browser.back();
-      default:             return `Unknown action: ${action}`;
+      case "type":          return browser.type(params.selector, params.text);
+      case "fill":          return browser.fill(params.label, params.text);
+      case "clickByText":   return browser.clickByText(params.text);
+      case "clickByRole":   return browser.clickByRole(params.role, params.name);
+      case "selectOption":  return browser.selectOption(params.label, params.value);
+      case "pickOption":    return browser.pickOption(params.text);
+      case "waitForText":   return browser.waitForText(params.text);
+      case "getText":       return browser.getText();
+      case "scroll":        return browser.scroll(params.direction);
+      case "pressEnter":    return browser.pressEnter();
+      case "back":          return browser.back();
+      default:              return `Unknown action: ${action}`;
     }
   };
 
@@ -70,8 +76,8 @@ async function executeAction(browser, action, params) {
 async function takeScreenshot(browser) {
   try {
     if (!browser.page) return null;
-    const buf = await browser.page.screenshot({ encoding: "base64" });
-    return buf;
+    const buf = await browser.page.screenshot();
+    return buf.toString("base64");
   } catch {
     return null;
   }

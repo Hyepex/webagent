@@ -111,7 +111,7 @@ const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\u200E\u200F\uFEFF\u00AD\u2060\u2061\u
 // HTML comments
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
-const MAX_CONTENT_LENGTH = 2000;
+const MAX_CONTENT_LENGTH = 4000;
 
 function sanitizePageContent(text) {
   if (!text || typeof text !== "string") return "";

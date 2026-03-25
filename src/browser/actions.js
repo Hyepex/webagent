@@ -64,19 +64,9 @@ async function pressEnter(page, settle) {
 }
 
 async function clickByText(page, text, settle) {
-  const clicked = await page.evaluate((searchText) => {
-    const els = [...document.querySelectorAll("a, button, [role=button], input[type=submit]")];
-    const match = els.find((e) => {
-      const t = e.textContent?.trim().toLowerCase() || "";
-      const aria = (e.getAttribute("aria-label") || "").toLowerCase();
-      return t.includes(searchText.toLowerCase()) || aria.includes(searchText.toLowerCase());
-    });
-    if (match) { match.click(); return match.textContent?.trim().substring(0, 60) || true; }
-    return null;
-  }, text);
-  if (!clicked) throw new Error(`No element found with text: "${text}"`);
+  const locator = page.getByText(text, { exact: false }).first();
+  await locator.click({ timeout: 5000 });
   await settle();
-  return clicked;
 }
 
 async function goBack(page, settle) {
@@ -84,4 +74,78 @@ async function goBack(page, settle) {
   await settle();
 }
 
-module.exports = { goto, clickBySelector, clickByIndex, typeText, getText, scroll, pressEnter, clickByText, goBack };
+// ─── New Playwright-Native Actions ───────────────────────────────────────────
+
+async function fillByLabel(page, label, text, settle) {
+  // Try strategies in order of reliability
+  const strategies = [
+    () => page.getByLabel(label, { exact: false }),
+    () => page.getByPlaceholder(label, { exact: false }),
+    () => page.getByRole("textbox", { name: label }),
+    () => page.getByRole("combobox", { name: label }),
+    () => page.getByRole("searchbox", { name: label }),
+  ];
+
+  for (const getLocator of strategies) {
+    const locator = getLocator();
+    if (await locator.count() > 0) {
+      await locator.first().click();
+      await locator.first().fill(text);
+      await settle();
+      return;
+    }
+  }
+
+  throw new Error(`No input found matching label: "${label}"`);
+}
+
+async function clickByRole(page, role, name, settle) {
+  const locator = page.getByRole(role, { name, exact: false });
+  await locator.first().click({ timeout: 5000 });
+  await settle();
+}
+
+async function selectOption(page, label, value, settle) {
+  const locator = page.getByLabel(label, { exact: false });
+  await locator.first().selectOption({ label: value });
+  await settle();
+}
+
+async function pickOption(page, text, settle) {
+  // Wait briefly for dropdown to appear
+  await new Promise((r) => setTimeout(r, 500));
+
+  // Strategy 1: ARIA role-based (most reliable for autocomplete)
+  const roleOption = page.locator(`[role="option"]`).filter({ hasText: text }).first();
+  if (await roleOption.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await roleOption.click();
+    await settle();
+    return;
+  }
+
+  // Strategy 2: Listbox children
+  const listItem = page.locator(`[role="listbox"] li, [role="listbox"] [role="option"], ul.suggestions li, .autocomplete-suggestion`).filter({ hasText: text }).first();
+  if (await listItem.isVisible({ timeout: 1000 }).catch(() => false)) {
+    await listItem.click();
+    await settle();
+    return;
+  }
+
+  // Strategy 3: Any visible element with matching text
+  const textMatch = page.getByText(text, { exact: false }).first();
+  await textMatch.click({ timeout: 3000 });
+  await settle();
+}
+
+async function waitForText(page, text, timeout = 5000) {
+  await page.getByText(text, { exact: false }).first().waitFor({
+    state: "visible",
+    timeout,
+  });
+}
+
+module.exports = {
+  goto, clickBySelector, clickByIndex, typeText, getText, scroll,
+  pressEnter, clickByText, goBack,
+  fillByLabel, clickByRole, selectOption, pickOption, waitForText,
+};
