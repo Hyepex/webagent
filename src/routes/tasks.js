@@ -5,7 +5,7 @@ const { validateInstruction } = require("../middleware/taskLimits");
 
 const router = express.Router();
 
-const DAILY_LIMITS = { free: 5, pro: 50, unlimited: Infinity };
+const DAILY_LIMITS = { free: 50, pro: 500, unlimited: Infinity };
 
 // POST /api/tasks — create a new task (auth required)
 router.post("/", requireAuth, async (req, res) => {
@@ -98,7 +98,7 @@ router.get("/:id", requireAuth, async (req, res) => {
       recipe_id: task.recipe_id,
       result: task.result,
       error: task.error,
-      tokens_used: task.tokens_used,
+
       duration_ms: task.duration_ms,
       created_at: task.created_at,
       completed_at: task.completed_at,

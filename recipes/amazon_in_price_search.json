@@ -1,0 +1,100 @@
+{
+  "id": "amazon_in_price_search",
+  "name": "Amazon India Price Search",
+  "variables": {
+    "product": {
+      "label": "Product to search",
+      "required": true,
+      "example": "iPhone 15"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_url",
+      "action": "buildUrl",
+      "comment": "Build Amazon India search URL",
+      "params": {
+        "builder": "amazon-in",
+        "args": {
+          "product": "{{product}}"
+        }
+      },
+      "store_as": "url"
+    },
+    {
+      "id": "navigate",
+      "action": "goto",
+      "params": {
+        "url": "{{url}}"
+      }
+    },
+    {
+      "id": "wait_for_results",
+      "action": "waitForAny",
+      "params": {
+        "selectors": [
+          "text=results for",
+          "text=Results",
+          "[data-component-type='s-search-result']"
+        ],
+        "timeout": 10000
+      },
+      "optional": true
+    },
+    {
+      "id": "extract_results",
+      "action": "extract",
+      "comment": "Extract product cards from Amazon search results",
+      "params": {
+        "scope": "[data-component-type='s-search-result']",
+        "fields": {
+          "title": {
+            "selector": "h2 span",
+            "index": 0
+          },
+          "price": {
+            "selector": ".a-price .a-offscreen",
+            "index": 0
+          },
+          "rating": {
+            "selector": ".a-icon-star-small .a-icon-alt"
+          },
+          "reviews": {
+            "selector": "a .s-underline-text",
+            "fallback": "span[aria-label*='stars'] + span a span"
+          }
+        },
+        "max_results": 5,
+        "fallback_action": "getText"
+      },
+      "store_as": "products"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{products}}"
+      }
+    }
+  ],
+  "success_count": 2,
+  "fail_count": 0,
+  "avg_duration_ms": 17139,
+  "last_used": "2026-03-25T19:25:35.393Z",
+  "version": 1,
+  "domain": "amazon.in",
+  "tags": [
+    "shopping",
+    "price"
+  ],
+  "match": {
+    "keywords": [
+      "price",
+      "cheapest",
+      "buy",
+      "cost",
+      "amazon"
+    ],
+    "pattern": "(?:find|search|price|cheapest|buy|cost).*?(?<product>[\\w\\s]+?)(?:\\s+on\\s+amazon|$)"
+  }
+}

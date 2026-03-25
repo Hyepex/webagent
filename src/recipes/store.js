@@ -47,7 +47,8 @@ function readFileRecipes() {
   return files
     .map((f) => {
       try {
-        return JSON.parse(fs.readFileSync(path.join(config.paths.recipes, f), "utf8"));
+        const raw = JSON.parse(fs.readFileSync(path.join(config.paths.recipes, f), "utf8"));
+        return normalizeRecipe(raw);
       } catch {
         return null;
       }
@@ -58,6 +59,51 @@ function readFileRecipes() {
 function writeFileRecipe(recipe) {
   ensureDir();
   fs.writeFileSync(recipePath(recipe.id), JSON.stringify(recipe, null, 2));
+}
+
+// ─── Schema Normalization ───────────────────────────────────────────────────
+// Handles both old schema (instruction_pattern, instruction_example) and
+// new schema (match.keywords, match.pattern). Also handles both recipe_id
+// (MongoDB) and id (file) fields.
+
+function normalizeRecipe(raw) {
+  // Normalize the ID field
+  const id = raw.id || raw.recipe_id;
+  if (!id) return null;
+
+  const recipe = {
+    id,
+    name: raw.name || id,
+    variables: raw.variables || [],
+    steps: raw.steps || [],
+    success_count: raw.success_count || 0,
+    fail_count: raw.fail_count || 0,
+    avg_duration_ms: raw.avg_duration_ms || 0,
+    last_used: raw.last_used,
+    created_at: raw.created_at,
+  };
+
+  // Copy over new-schema fields if present
+  if (raw.version !== undefined) recipe.version = raw.version;
+  if (raw.domain) recipe.domain = raw.domain;
+  if (raw.tags) recipe.tags = raw.tags;
+
+  // Normalize match block
+  if (raw.match && raw.match.pattern) {
+    // New schema — use as-is
+    recipe.match = raw.match;
+  } else if (raw.instruction_pattern) {
+    // Old schema — convert to new match format
+    recipe.match = {
+      keywords: raw.instruction_pattern.split("|").map((k) => k.trim()).filter(Boolean),
+      pattern: raw.instruction_pattern,
+    };
+    // Preserve old fields for reference
+    recipe.instruction_pattern = raw.instruction_pattern;
+    recipe.instruction_example = raw.instruction_example;
+  }
+
+  return recipe;
 }
 
 // ─── Unified store functions ────────────────────────────────────────────────
@@ -100,18 +146,29 @@ async function saveRecipe(recipe) {
 }
 
 async function getRecipes() {
+  let mongoRecipes = [];
   if (isMongoReady()) {
     const Model = getModel();
     if (Model) {
       try {
         const docs = await Model.find().lean();
-        return docs.map(toPlainRecipe);
+        mongoRecipes = docs.map(toPlainRecipe).map(normalizeRecipe).filter(Boolean);
       } catch (err) {
         log.warn(`MongoDB read failed, using file fallback: ${err.message}`);
       }
     }
   }
-  return readFileRecipes();
+
+  // Always load file recipes and merge (file recipes fill gaps not in MongoDB)
+  const fileRecipes = readFileRecipes();
+  const seenIds = new Set(mongoRecipes.map((r) => r.id));
+  for (const fr of fileRecipes) {
+    if (!seenIds.has(fr.id)) {
+      mongoRecipes.push(fr);
+    }
+  }
+
+  return mongoRecipes;
 }
 
 async function getRecipeById(id) {
@@ -120,7 +177,7 @@ async function getRecipeById(id) {
     if (Model) {
       try {
         const doc = await Model.findOne({ recipe_id: id }).lean();
-        if (doc) return toPlainRecipe(doc);
+        if (doc) return normalizeRecipe(toPlainRecipe(doc));
       } catch {
         // fall through to file
       }
@@ -129,7 +186,8 @@ async function getRecipeById(id) {
   const p = recipePath(id);
   if (!fs.existsSync(p)) return null;
   try {
-    return JSON.parse(fs.readFileSync(p, "utf8"));
+    const raw = JSON.parse(fs.readFileSync(p, "utf8"));
+    return normalizeRecipe(raw);
   } catch {
     return null;
   }
@@ -207,7 +265,8 @@ async function updateRecipeStats(id, success, durationMs) {
 // Convert Mongoose lean doc to plain recipe object
 function toPlainRecipe(doc) {
   return {
-    id: doc.recipe_id,
+    id: doc.recipe_id || doc.id,
+    recipe_id: doc.recipe_id,
     name: doc.name,
     instruction_pattern: doc.instruction_pattern,
     instruction_example: doc.instruction_example,

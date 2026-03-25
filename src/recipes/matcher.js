@@ -1,41 +1,57 @@
-const config = require("../config");
-const llm = require("../llm/client");
-const { VARIABLE_EXTRACTION_PROMPT } = require("../agent/prompts");
 const { getRecipes } = require("./store");
 const { createLogger } = require("../utils/logger");
 
 const log = createLogger("recipe-matcher");
 
-function tokenize(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2);
-}
+const MATCH_THRESHOLD = 0.5;
 
-function scoreMatch(instruction, recipe) {
-  // Check regex pattern match
-  let patternMatch = false;
-  try {
-    const regex = new RegExp(recipe.instruction_pattern, "i");
-    patternMatch = regex.test(instruction);
-  } catch {}
+// ─── Score a single recipe against an instruction ────────────────────────────
 
-  if (!patternMatch) return 0;
+function scoreRecipe(instruction, recipe) {
+  const match = recipe.match;
+  if (!match) return { score: 0, variables: {} };
 
-  // Score keyword overlap with example
-  const instrTokens = new Set(tokenize(instruction));
-  const exampleTokens = tokenize(recipe.instruction_example);
-  if (exampleTokens.length === 0) return patternMatch ? 0.5 : 0;
+  const lower = instruction.toLowerCase();
 
-  let overlap = 0;
-  for (const token of exampleTokens) {
-    if (instrTokens.has(token)) overlap++;
+  // Step 1: keyword check — at least one keyword must appear
+  const keywords = match.keywords || [];
+  let keywordHits = 0;
+  for (const kw of keywords) {
+    if (lower.includes(kw.toLowerCase())) keywordHits++;
+  }
+  if (keywordHits === 0) return { score: 0, variables: {} };
+
+  const keywordScore = keywordHits / keywords.length;
+
+  // Step 2: regex pattern match
+  let patternScore = 0;
+  let variables = {};
+
+  if (match.pattern) {
+    try {
+      const regex = new RegExp(match.pattern, "i");
+      const result = regex.exec(instruction);
+      if (result) {
+        patternScore = 1;
+        // Extract named capture groups
+        if (result.groups) {
+          for (const [key, value] of Object.entries(result.groups)) {
+            if (value) variables[key] = value.trim();
+          }
+        }
+      }
+    } catch {
+      // Invalid regex — skip pattern scoring
+    }
   }
 
-  return overlap / exampleTokens.length;
+  // Step 3: combined score
+  const score = keywordScore * 0.4 + patternScore * 0.6;
+
+  return { score, variables };
 }
+
+// ─── Find best matching recipe ───────────────────────────────────────────────
 
 async function matchRecipe(instruction) {
   const recipes = await getRecipes();
@@ -43,80 +59,53 @@ async function matchRecipe(instruction) {
 
   let bestRecipe = null;
   let bestScore = 0;
+  let bestVariables = {};
 
   for (const recipe of recipes) {
-    const score = scoreMatch(instruction, recipe);
+    const { score, variables } = scoreRecipe(instruction, recipe);
     if (score > bestScore) {
       bestScore = score;
       bestRecipe = recipe;
+      bestVariables = variables;
     }
   }
 
-  if (bestScore >= config.recipes.matchThreshold) {
+  if (bestScore >= MATCH_THRESHOLD && bestRecipe) {
     log.success(`Matched recipe "${bestRecipe.name}" (score: ${bestScore.toFixed(2)})`);
-    return { recipe: bestRecipe, score: bestScore };
+    return { recipe: bestRecipe, score: bestScore, variables: bestVariables };
   }
 
   return null;
 }
 
-async function extractVariables(instruction, variables) {
-  if (!variables || variables.length === 0) return {};
+// ─── Merge variables from regex extraction + template vars + recipe defaults ─
 
-  // Try simple heuristic extraction first
-  const extracted = {};
-  for (const v of variables) {
-    if (v.default) extracted[v.name] = v.default;
-  }
+function mergeVariables(extracted, templateVars, recipeDef) {
+  const merged = { ...extracted };
 
-  // Extract website/domain
-  const domainMatch = instruction.match(/(?:on|from|at)\s+([\w]+\.(?:com|in|org|net|co\.[\w]+))/i);
-  const siteMatch = instruction.match(/(?:on|from|at)\s+(amazon|flipkart|google|wikipedia|bbc|youtube|ebay)/i);
-
-  for (const v of variables) {
-    if (v.name === "site" || v.name === "website") {
-      if (domainMatch) extracted[v.name] = domainMatch[1];
-      else if (siteMatch) extracted[v.name] = siteMatch[1] + ".com";
-    }
-  }
-
-  // For product/subject extraction, use a small LLM call
-  const needsLLM = variables.some(
-    (v) => !extracted[v.name] && v.name !== "site" && v.name !== "website"
-  );
-
-  if (needsLLM) {
-    try {
-      const varDefs = variables
-        .map((v) => `- ${v.name}: ${v.extracted_from}`)
-        .join("\n");
-
-      const prompt = VARIABLE_EXTRACTION_PROMPT
-        .replace("{{variable_definitions}}", varDefs)
-        .replace("{{instruction}}", instruction);
-
-      const response = await llm.complete(
-        [
-          { role: "system", content: "Extract variables. Respond with ONLY JSON." },
-          { role: "user", content: prompt },
-        ],
-        { maxTokens: 100 }
-      );
-
-      const raw = response.choices[0].message.content.trim();
-      const match = raw.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        for (const [k, v] of Object.entries(parsed)) {
-          if (v && typeof v === "string") extracted[k] = v;
-        }
+  // Template variables (from UI form) override regex-extracted ones
+  if (templateVars && typeof templateVars === "object") {
+    for (const [key, value] of Object.entries(templateVars)) {
+      if (value !== undefined && value !== null && value !== "") {
+        merged[key] = value;
       }
-    } catch (err) {
-      log.warn(`Variable extraction LLM call failed: ${err.message}`);
     }
   }
 
-  return extracted;
+  // Apply defaults from recipe definition for missing required vars
+  const varDefs = recipeDef.variables || {};
+  for (const [key, def] of Object.entries(varDefs)) {
+    if (!(key in merged) || merged[key] === undefined || merged[key] === "") {
+      if (def.default) {
+        merged[key] = def.default;
+      } else if (def.example && def.required) {
+        // Use example as last resort for required vars
+        merged[key] = def.example;
+      }
+    }
+  }
+
+  return merged;
 }
 
-module.exports = { matchRecipe, extractVariables };
+module.exports = { matchRecipe, mergeVariables, scoreRecipe };

@@ -225,7 +225,7 @@ class BrowserController {
 
     this.elements = rawElements.map((el) => ({ ...el, _rawIndex: el.rawIndex }));
 
-    // Sanitize visible text before returning to LLM
+    // Sanitize visible text before returning
     const sanitizedText = sanitizePageContent(visibleText);
 
     return parser.formatPageInfo(title, url, this.elements, sanitizedText);

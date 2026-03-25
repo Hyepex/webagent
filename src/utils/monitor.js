@@ -10,7 +10,6 @@ const metrics = {
   tasksCompleted: 0,
   tasksFailed: 0,
   totalDurationMs: 0,
-  llmTokensUsed: 0,
   errors: 0,
   securityBlocks: 0,
   _todayDate: new Date().toDateString(),
@@ -23,7 +22,6 @@ function _resetIfNewDay() {
     metrics.tasksCompleted = 0;
     metrics.tasksFailed = 0;
     metrics.totalDurationMs = 0;
-    metrics.llmTokensUsed = 0;
     metrics.errors = 0;
     metrics.securityBlocks = 0;
     metrics._todayDate = today;
@@ -58,11 +56,6 @@ function recordSecurityBlock() {
   metrics.securityBlocks++;
 }
 
-function recordTokenUsage(tokens) {
-  _resetIfNewDay();
-  metrics.llmTokensUsed += tokens || 0;
-}
-
 // ─── Get Metrics ─────────────────────────────────────────────────────────────
 
 function getMetrics(activeTaskId, queueLength) {
@@ -88,7 +81,6 @@ function getMetrics(activeTaskId, queueLength) {
       tasks_failed: metrics.tasksFailed,
       success_rate: `${successRate}%`,
       avg_duration_ms: avgDuration,
-      llm_tokens_used: metrics.llmTokensUsed,
       errors: metrics.errors,
       security_blocks: metrics.securityBlocks,
     },
@@ -115,7 +107,7 @@ setInterval(() => {
   const avgDur = m.tasksCompleted > 0 ? Math.round(m.totalDurationMs / m.tasksCompleted / 1000) : 0;
   log.info(
     `Hourly: ${m.tasksToday} tasks (${m.tasksCompleted} ok, ${m.tasksFailed} fail), ` +
-    `avg ${avgDur}s, ${m.llmTokensUsed} tokens, ${m.errors} errors, ${m.securityBlocks} blocked`
+    `avg ${avgDur}s, ${m.errors} errors, ${m.securityBlocks} blocked`
   );
 }, 60 * 60 * 1000);
 
@@ -125,6 +117,5 @@ module.exports = {
   recordTaskFailed,
   recordError,
   recordSecurityBlock,
-  recordTokenUsage,
   getMetrics,
 };

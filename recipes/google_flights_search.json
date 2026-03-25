@@ -1,0 +1,108 @@
+{
+  "id": "google_flights_search",
+  "name": "Flight Search — Google Flights",
+  "variables": {
+    "origin": {
+      "label": "From city",
+      "required": true,
+      "example": "Mumbai"
+    },
+    "destination": {
+      "label": "To city",
+      "required": true,
+      "example": "Goa"
+    },
+    "date": {
+      "label": "Departure date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "returnDate": {
+      "label": "Return date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "tripType": {
+      "label": "Trip type",
+      "required": false,
+      "default": "one-way"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_url",
+      "action": "buildUrl",
+      "comment": "Build Google Flights URL with protobuf-encoded parameters — no form filling needed",
+      "params": {
+        "builder": "google-flights",
+        "args": {
+          "origin": "{{origin}}",
+          "destination": "{{destination}}",
+          "date": "{{date}}",
+          "returnDate": "{{returnDate}}",
+          "tripType": "{{tripType}}"
+        }
+      },
+      "store_as": "url"
+    },
+    {
+      "id": "navigate",
+      "action": "goto",
+      "comment": "Navigate directly to results page",
+      "params": {
+        "url": "{{url}}"
+      }
+    },
+    {
+      "id": "wait_for_results",
+      "action": "waitForAny",
+      "comment": "Wait for flight results to load",
+      "params": {
+        "selectors": [
+          "text=results returned",
+          "text=departing flights",
+          "text=Best departing",
+          "text=Top departing"
+        ],
+        "timeout": 15000
+      },
+      "optional": true
+    },
+    {
+      "id": "extract_results",
+      "action": "extractList",
+      "comment": "Extract flight results from listitem elements under search results",
+      "params": {
+        "heading": "Search results",
+        "max_results": 5
+      },
+      "store_as": "flights"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{flights}}"
+      }
+    }
+  ],
+  "success_count": 4,
+  "fail_count": 0,
+  "avg_duration_ms": 4582,
+  "last_used": "2026-03-25T19:10:07.113Z",
+  "version": 3,
+  "domain": "google.com/travel/flights",
+  "tags": [
+    "travel",
+    "flights"
+  ],
+  "match": {
+    "keywords": [
+      "flight",
+      "flights",
+      "fly",
+      "flying"
+    ],
+    "pattern": "(?:flight|flights|fly).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
+  }
+}

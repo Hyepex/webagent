@@ -1,0 +1,122 @@
+{
+  "id": "weather_check",
+  "name": "Weather Check",
+  "variables": {
+    "city": {
+      "label": "City",
+      "required": true,
+      "example": "Mumbai"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_url",
+      "action": "buildUrl",
+      "comment": "Build wttr.in JSON API URL",
+      "params": {
+        "builder": "weather",
+        "args": {
+          "city": "{{city}}"
+        }
+      },
+      "store_as": "url"
+    },
+    {
+      "id": "navigate",
+      "action": "goto",
+      "comment": "Navigate to wttr.in JSON endpoint",
+      "params": {
+        "url": "{{url}}"
+      }
+    },
+    {
+      "id": "fetch",
+      "action": "fetchJson",
+      "comment": "Fetch weather JSON data",
+      "params": {
+        "url": "{{url}}"
+      },
+      "store_as": "weather_json"
+    },
+    {
+      "id": "format",
+      "action": "formatJson",
+      "comment": "Format weather data into readable report",
+      "params": {
+        "source": "weather_json",
+        "fields": [
+          {
+            "path": "nearest_area.0.areaName.0.value",
+            "label": "Location"
+          },
+          {
+            "path": "current_condition.0.weatherDesc.0.value",
+            "label": "Condition"
+          },
+          {
+            "path": "current_condition.0.temp_C",
+            "label": "Temperature (C)"
+          },
+          {
+            "path": "current_condition.0.FeelsLikeC",
+            "label": "Feels Like (C)"
+          },
+          {
+            "path": "current_condition.0.humidity",
+            "label": "Humidity (%)"
+          },
+          {
+            "path": "current_condition.0.windspeedKmph",
+            "label": "Wind Speed (kmph)"
+          },
+          {
+            "path": "current_condition.0.winddir16Point",
+            "label": "Wind Direction"
+          },
+          {
+            "path": "weather.0.maxtempC",
+            "label": "Today High (C)"
+          },
+          {
+            "path": "weather.0.mintempC",
+            "label": "Today Low (C)"
+          },
+          {
+            "path": "weather.0.astronomy.0.sunrise",
+            "label": "Sunrise"
+          },
+          {
+            "path": "weather.0.astronomy.0.sunset",
+            "label": "Sunset"
+          }
+        ]
+      },
+      "store_as": "weather_report"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{weather_report}}"
+      }
+    }
+  ],
+  "success_count": 1,
+  "fail_count": 0,
+  "avg_duration_ms": 1604,
+  "last_used": "2026-03-25T19:18:27.572Z",
+  "version": 1,
+  "domain": "wttr.in",
+  "tags": [
+    "weather",
+    "utilities"
+  ],
+  "match": {
+    "keywords": [
+      "weather",
+      "temperature",
+      "forecast"
+    ],
+    "pattern": "(?:weather|temperature|forecast).*(?:in|for|at)\\s+(?<city>[\\w\\s]+)"
+  }
+}

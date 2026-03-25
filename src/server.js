@@ -7,10 +7,8 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const config = require("./config");
 const BrowserController = require("./browser/controller");
-const { runTask, executeAction } = require("./agent/executor");
-const { matchRecipe, extractVariables } = require("./recipes/matcher");
+const { matchRecipe, mergeVariables } = require("./recipes/matcher");
 const { executeRecipe } = require("./recipes/executor");
-const { captureRecipe } = require("./recipes/capture");
 const { getRecipes, getRecipeById, deleteRecipe } = require("./recipes/store");
 const { createLogger } = require("./utils/logger");
 const monitor = require("./utils/monitor");
@@ -114,85 +112,106 @@ async function processTask(task, io, dbTask) {
     // Create isolated browser context for this task
     await browser.createTaskContext();
 
-    // Check for matching recipe
+    // Match a recipe for this instruction
     const match = await matchRecipe(task.instruction);
 
-    if (match) {
-      task.mode = "recipe";
-      task.recipe_id = match.recipe.id;
-      io.emit("task:start", { taskId: task.id, mode: "recipe", recipeName: match.recipe.name });
-      log.info(`Using recipe "${match.recipe.name}" for task ${task.id}`);
+    if (!match) {
+      // No recipe available — fail immediately (recipe-only)
+      task.status = "failed";
+      task.error = "No recipe available for this task. Please use a template or add a recipe.";
+      task.completed_at = new Date().toISOString();
+      io.emit("task:error", { taskId: task.id, error: task.error });
 
-      const variables = await extractVariables(task.instruction, match.recipe.variables);
+      if (dbTask) {
+        dbTask.status = "failed";
+        dbTask.error = task.error;
+        dbTask.completed_at = new Date();
+        await dbTask.save().catch(() => {});
+      }
 
-      const recipeResult = await executeRecipe(match.recipe, variables, browser, {
-        isCancelled,
-        onStep: (stepData) => {
-          const filename = saveScreenshot(task.id, stepData.step_number, stepData.screenshot_base64);
-          stepData.screenshot_file = filename;
-          task.steps.push(stepData);
-          io.emit("task:step", { taskId: task.id, step: stepData });
+      monitor.recordTaskFailed();
+      recordTaskResult(dbTask?.user_id?.toString(), false);
+      log.warn(`Task ${task.id}: no matching recipe found`);
+      return;
+    }
 
-          // Save step to DB
-          if (dbTask) {
-            dbTask.steps.push({
-              step_number: stepData.step_number,
-              thought: stepData.thought,
-              action: stepData.action,
-              params: stepData.params,
-              result: stepData.result,
-              screenshot_url: filename ? `/screenshots/${filename}` : null,
-              page_url: stepData.page_url,
-              page_title: stepData.page_title,
-              duration_ms: stepData.duration_ms,
-              timestamp: new Date(),
-            });
-            dbTask.mode = "recipe";
-            dbTask.recipe_id = match.recipe.id;
-            dbTask.save().catch(() => {});
-          }
-        },
+    // Recipe matched — execute it
+    task.mode = "recipe";
+    task.recipe_id = match.recipe.id;
+    io.emit("task:start", { taskId: task.id, mode: "recipe", recipeName: match.recipe.name });
+    log.info(`Using recipe "${match.recipe.name}" for task ${task.id}`);
+
+    const mergedVars = mergeVariables(match.variables, task.templateVars || {}, match.recipe);
+
+    const recipeResult = await executeRecipe(match.recipe, mergedVars, browser, {
+      isCancelled,
+      onStep: (stepData) => {
+        const filename = saveScreenshot(task.id, stepData.step_number, stepData.screenshot_base64);
+        stepData.screenshot_file = filename;
+        task.steps.push(stepData);
+        io.emit("task:step", { taskId: task.id, step: stepData });
+
+        // Save step to DB
+        if (dbTask) {
+          dbTask.steps.push({
+            step_number: stepData.step_number,
+            thought: stepData.thought,
+            action: stepData.action,
+            params: stepData.params,
+            result: stepData.result,
+            screenshot_url: filename ? `/screenshots/${filename}` : null,
+            page_url: stepData.page_url,
+            page_title: stepData.page_title,
+            duration_ms: stepData.duration_ms,
+            timestamp: new Date(),
+          });
+          dbTask.mode = "recipe";
+          dbTask.recipe_id = match.recipe.id;
+          dbTask.save().catch(() => {});
+        }
+      },
+    });
+
+    if (recipeResult.success) {
+      task.status = "completed";
+      task.result = recipeResult.result;
+      task.duration_ms = recipeResult.duration_ms;
+      task.completed_at = new Date().toISOString();
+      io.emit("task:complete", {
+        taskId: task.id,
+        result: task.result,
+        mode: "recipe",
+        duration_ms: task.duration_ms,
       });
 
-      if (recipeResult.success) {
-        task.status = "completed";
-        task.result = recipeResult.result;
-        task.duration_ms = recipeResult.duration_ms;
-        task.completed_at = new Date().toISOString();
-        io.emit("task:complete", {
-          taskId: task.id,
-          result: task.result,
-          recipe_saved: false,
-          mode: "recipe",
-          duration_ms: task.duration_ms,
-        });
-
-        if (dbTask) {
-          dbTask.status = "completed";
-          dbTask.result = recipeResult.result;
-          dbTask.duration_ms = recipeResult.duration_ms;
-          dbTask.completed_at = new Date();
-          await dbTask.save().catch(() => {});
-        }
-
-        monitor.recordTaskComplete(recipeResult.duration_ms);
-        recordTaskResult(dbTask?.user_id?.toString(), true);
-        log.success(`Task ${task.id} completed via recipe`);
-      } else {
-        // Recipe failed — fall back to LLM
-        log.warn(`Recipe failed at step ${recipeResult.failed_at_step}, falling back to LLM`);
-        task.mode = "llm";
-        task.steps = [];
-        if (dbTask) {
-          dbTask.steps = [];
-          dbTask.mode = "llm";
-        }
-        await runLLMTask(task, io, isCancelled, dbTask);
+      if (dbTask) {
+        dbTask.status = "completed";
+        dbTask.result = recipeResult.result;
+        dbTask.duration_ms = recipeResult.duration_ms;
+        dbTask.completed_at = new Date();
+        await dbTask.save().catch(() => {});
       }
+
+      monitor.recordTaskComplete(recipeResult.duration_ms);
+      recordTaskResult(dbTask?.user_id?.toString(), true);
+      log.success(`Task ${task.id} completed via recipe`);
     } else {
-      task.mode = "llm";
-      io.emit("task:start", { taskId: task.id, mode: "llm" });
-      await runLLMTask(task, io, isCancelled, dbTask);
+      // Recipe failed — recipe-only
+      task.status = "failed";
+      task.error = `Recipe failed at step ${recipeResult.failed_at_step}: ${recipeResult.result}`;
+      task.completed_at = new Date().toISOString();
+      io.emit("task:error", { taskId: task.id, error: task.error });
+
+      if (dbTask) {
+        dbTask.status = "failed";
+        dbTask.error = task.error;
+        dbTask.completed_at = new Date();
+        await dbTask.save().catch(() => {});
+      }
+
+      monitor.recordTaskFailed();
+      recordTaskResult(dbTask?.user_id?.toString(), false);
+      log.error(`Task ${task.id} recipe failed at step ${recipeResult.failed_at_step}`);
     }
   } catch (err) {
     task.status = "error";
@@ -229,76 +248,6 @@ async function processTask(task, io, dbTask) {
     io.emit("task:start", { taskId: next.task.id, mode: "pending" });
     processTask(next.task, io, next.dbTask);
   }
-}
-
-async function runLLMTask(task, io, isCancelled, dbTask) {
-  const result = await runTask(browser, task.instruction, {
-    isCancelled,
-    onStep: (stepData) => {
-      const filename = saveScreenshot(task.id, stepData.step_number, stepData.screenshot_base64);
-      stepData.screenshot_file = filename;
-      task.steps.push(stepData);
-      io.emit("task:step", { taskId: task.id, step: stepData });
-
-      // Save step to DB
-      if (dbTask) {
-        dbTask.steps.push({
-          step_number: stepData.step_number,
-          thought: stepData.thought,
-          action: stepData.action,
-          params: stepData.params,
-          result: stepData.result,
-          screenshot_url: filename ? `/screenshots/${filename}` : null,
-          page_url: stepData.page_url,
-          page_title: stepData.page_title,
-          duration_ms: stepData.duration_ms,
-          timestamp: new Date(),
-        });
-        dbTask.mode = "llm";
-        dbTask.save().catch(() => {});
-      }
-    },
-    onComplete: () => {},
-    onError: (err, stepNum) => {
-      log.warn(`Step ${stepNum} error: ${err.message}`);
-    },
-  });
-
-  task.status = "completed";
-  task.result = result.result;
-  task.duration_ms = result.duration_ms;
-  task.completed_at = new Date().toISOString();
-
-  // Try to capture recipe from successful LLM task
-  let recipeSaved = false;
-  if (result.steps && result.steps.length > 0) {
-    try {
-      const captured = captureRecipe(task.instruction, result);
-      if (captured) recipeSaved = true;
-    } catch (err) {
-      log.warn(`Recipe capture failed: ${err.message}`);
-    }
-  }
-
-  if (dbTask) {
-    dbTask.status = "completed";
-    dbTask.result = result.result;
-    dbTask.duration_ms = result.duration_ms;
-    dbTask.completed_at = new Date();
-    await dbTask.save().catch(() => {});
-  }
-
-  monitor.recordTaskComplete(result.duration_ms);
-  recordTaskResult(dbTask?.user_id?.toString(), true);
-
-  io.emit("task:complete", {
-    taskId: task.id,
-    result: task.result,
-    recipe_saved: recipeSaved,
-    mode: "llm",
-    duration_ms: task.duration_ms,
-  });
-  log.success(`Task ${task.id} completed via LLM${recipeSaved ? " (recipe saved)" : ""}`);
 }
 
 // ─── Express + Socket.IO ────────────────────────────────────────────────────
@@ -400,7 +349,7 @@ async function startServer() {
 
       // Daily rate limit
       user.checkDailyReset();
-      const DAILY_LIMITS = { free: 5, pro: 50, unlimited: Infinity };
+      const DAILY_LIMITS = { free: 50, pro: 500, unlimited: Infinity };
       const limit = DAILY_LIMITS[user.plan] || DAILY_LIMITS.free;
       if (user.tasks_today >= limit) {
         return res.status(429).json({
@@ -421,7 +370,7 @@ async function startServer() {
       error: null,
       mode: null,
       recipe_id: null,
-      tokens_used: 0,
+
       duration_ms: 0,
       created_at: new Date().toISOString(),
       completed_at: null,
@@ -451,14 +400,14 @@ async function startServer() {
       return res.json({
         ...task,
         queue_position: position,
-        tasks_remaining: user ? (({ free: 5, pro: 50 })[user.plan] || 5) - user.tasks_today : null,
+        tasks_remaining: user ? (({ free: 50, pro: 500 })[user.plan] || 50) - user.tasks_today : null,
       });
     }
 
     processTask(task, io, dbTask);
     return res.json({
       ...task,
-      tasks_remaining: user ? (({ free: 5, pro: 50 })[user.plan] || 5) - user.tasks_today : null,
+      tasks_remaining: user ? (({ free: 50, pro: 500 })[user.plan] || 50) - user.tasks_today : null,
     });
   });
 
@@ -520,7 +469,7 @@ async function startServer() {
         recipe_id: task.recipe_id,
         result: task.result,
         error: task.error,
-        tokens_used: task.tokens_used,
+
         duration_ms: task.duration_ms,
         created_at: task.created_at,
         completed_at: task.completed_at,
@@ -676,7 +625,7 @@ async function startServer() {
       error: null,
       mode: null,
       recipe_id: null,
-      tokens_used: 0,
+
       duration_ms: 0,
       created_at: new Date().toISOString(),
       completed_at: null,
@@ -698,10 +647,10 @@ async function startServer() {
   httpServer.listen(config.server.port, config.server.host, async () => {
     const recipes = await getRecipes().catch(() => []);
     log.raw("\n+------------------------------------------------------+");
-    log.raw("|          WebAgent — Dashboard Server                  |");
+    log.raw("|      WebAgent — Recipe-Only Dashboard Server          |");
     log.raw("+------------------------------------------------------+\n");
     log.success(`Server running at http://localhost:${config.server.port}`);
-    log.info(`LLM: ${config.llm.primaryModel} (fallback: ${config.llm.fallbackModel})`);
+    log.info(`Mode: recipe-only`);
     log.info(`MongoDB: ${mongoose.connection.readyState === 1 ? "connected" : "not connected"}`);
     log.info(`Recipes loaded: ${recipes.length}`);
     log.info(`Health check: http://localhost:${config.server.port}/api/health`);

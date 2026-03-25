@@ -1,0 +1,89 @@
+{
+  "id": "wikipedia_lookup",
+  "name": "Wikipedia Lookup",
+  "variables": {
+    "topic": {
+      "label": "Topic to search",
+      "required": true,
+      "example": "History of cricket"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_url",
+      "action": "buildUrl",
+      "comment": "Build Wikipedia REST API summary URL",
+      "params": {
+        "builder": "wikipedia",
+        "args": {
+          "topic": "{{topic}}"
+        }
+      },
+      "store_as": "url"
+    },
+    {
+      "id": "navigate",
+      "action": "goto",
+      "comment": "Navigate to API endpoint (returns JSON page)",
+      "params": {
+        "url": "{{url}}"
+      }
+    },
+    {
+      "id": "fetch",
+      "action": "fetchJson",
+      "comment": "Fetch Wikipedia summary JSON via REST API",
+      "params": {
+        "url": "{{url}}"
+      },
+      "store_as": "wiki_json"
+    },
+    {
+      "id": "format",
+      "action": "formatJson",
+      "comment": "Format the JSON into readable output",
+      "params": {
+        "source": "wiki_json",
+        "fields": [
+          {
+            "path": "title",
+            "label": "Topic"
+          },
+          {
+            "path": "description",
+            "label": "Description"
+          },
+          {
+            "path": "extract",
+            "label": "Summary"
+          }
+        ]
+      },
+      "store_as": "wiki_result"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{wiki_result}}"
+      }
+    }
+  ],
+  "success_count": 4,
+  "fail_count": 1,
+  "avg_duration_ms": 1319,
+  "last_used": "2026-03-25T19:21:59.411Z",
+  "version": 1,
+  "domain": "en.wikipedia.org",
+  "tags": [
+    "research",
+    "wiki"
+  ],
+  "match": {
+    "keywords": [
+      "wikipedia",
+      "wiki"
+    ],
+    "pattern": "(?:wikipedia|wiki)\\s+(?:about|for|on)\\s+(?<topic>[\\w\\s]+)"
+  }
+}

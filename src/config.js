@@ -4,14 +4,6 @@ require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 const ROOT = path.resolve(__dirname, "..");
 
 const config = {
-  llm: {
-    provider: process.env.LLM_PROVIDER || "groq",
-    apiKey: process.env.LLM_API_KEY,
-    primaryModel: process.env.LLM_MODEL || "llama-3.3-70b-versatile",
-    fallbackModel: process.env.LLM_FALLBACK_MODEL || "llama-3.1-8b-instant",
-    maxTokens: parseInt(process.env.LLM_MAX_TOKENS) || 400,
-    temperature: parseFloat(process.env.LLM_TEMPERATURE) || 0.1,
-  },
   browser: {
     headless: process.env.BROWSER_HEADLESS === "true",
     executablePath: process.env.BROWSER_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,

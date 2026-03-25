@@ -1,0 +1,63 @@
+{
+  "id": "bbc_news_headlines",
+  "name": "BBC News Headlines",
+  "variables": {},
+  "steps": [
+    {
+      "id": "navigate",
+      "action": "goto",
+      "comment": "Navigate directly to BBC News",
+      "params": {
+        "url": "https://www.bbc.com/news"
+      }
+    },
+    {
+      "id": "wait_for_page",
+      "action": "waitForAny",
+      "params": {
+        "selectors": [
+          "text=BBC News",
+          "[data-testid='card-headline']",
+          "main h2"
+        ],
+        "timeout": 10000
+      },
+      "optional": true
+    },
+    {
+      "id": "extract_headlines",
+      "action": "extractDom",
+      "comment": "Extract headlines via verified data-testid='card-headline' selector",
+      "params": {
+        "selector": "[data-testid='card-headline']",
+        "max_results": 10
+      },
+      "store_as": "headlines"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{headlines}}"
+      }
+    }
+  ],
+  "success_count": 2,
+  "fail_count": 0,
+  "avg_duration_ms": 3069,
+  "last_used": "2026-03-25T19:19:27.105Z",
+  "version": 1,
+  "domain": "bbc.com",
+  "tags": [
+    "news",
+    "headlines"
+  ],
+  "match": {
+    "keywords": [
+      "headlines",
+      "news",
+      "bbc"
+    ],
+    "pattern": "(?:headlines|news|top stories).*(?:from\\s+)?(?:bbc|BBC)?"
+  }
+}
