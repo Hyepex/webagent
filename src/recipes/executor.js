@@ -438,6 +438,102 @@ async function execStep(page, step, ctx, browser) {
       break;
     }
 
+    case "comparePrices": {
+      // Parse a raw flight line into structured fields
+      function parseFlight(raw, source) {
+        // Extract price
+        const priceMatch = raw.match(/₹\s?([\d,]+)/);
+        if (!priceMatch) return null;
+        const price = parseInt(priceMatch[1].replace(/,/g, ""));
+
+        // Extract times (HH:MM AM/PM or HH:MM 24h)
+        const timeMatch = raw.match(/(\d{1,2}:\d{2}\s*(?:AM|PM)?)\s*[\s|–-]+\s*(\d{1,2}:\d{2}\s*(?:AM|PM)?(?:\+\d)?)/i);
+        const departure = timeMatch ? timeMatch[1].trim() : "";
+        const arrival = timeMatch ? timeMatch[2].trim() : "";
+
+        // Extract airline
+        const airlines = ["IndiGo", "Air India Express", "Air India", "Akasa Air", "SpiceJet", "Vistara", "GoFirst", "Etihad", "Emirates", "Qatar Airways", "Lufthansa", "British Airways", "Singapore Airlines"];
+        let airline = "";
+        for (const a of airlines) {
+          if (raw.includes(a)) { airline = a; break; }
+        }
+
+        // Extract stops
+        let stops = "Nonstop";
+        if (/\bdirect\b/i.test(raw) || /\bNonstop\b/i.test(raw)) {
+          stops = "Nonstop";
+        } else {
+          const stopMatch = raw.match(/(\d+)\s*stop/i);
+          if (stopMatch) stops = stopMatch[1] + " stop";
+        }
+
+        // Extract duration — match "1h 20m", "1 hr 20 min", "4h 20m" etc
+        // Use word boundary or capital letter after 'm' to avoid capturing airline names
+        const durMatch = raw.match(/(\d+\s*h(?:r)?(?:\s*\d+\s*m(?:in)?)?)(?=[A-Z\s₹\d,.|]|$)/);
+        const duration = durMatch ? durMatch[1].replace(/\s+/g, " ").trim() : "";
+
+        return { price, departure, arrival, airline, stops, duration, source };
+      }
+
+      // Parse all flights from all sources
+      const allFlights = [];
+      for (const src of params.sources) {
+        const raw = ctx[src.ctx_key] || "";
+        const lines = raw.split("\n").filter((l) => l.trim());
+        for (const line of lines) {
+          const parsed = parseFlight(line, src.name);
+          if (parsed) allFlights.push(parsed);
+        }
+      }
+
+      if (allFlights.length === 0) {
+        result = "No flights with prices found.";
+        break;
+      }
+
+      allFlights.sort((a, b) => a.price - b.price);
+
+      // Format a single flight as a clean line
+      function fmt(f, idx) {
+        const parts = [`₹${f.price.toLocaleString("en-IN")}`];
+        if (f.airline) parts.push(f.airline);
+        if (f.departure && f.arrival) parts.push(`${f.departure} → ${f.arrival}`);
+        if (f.duration) parts.push(f.duration);
+        if (f.stops) parts.push(f.stops);
+        parts.push(`(${f.source})`);
+        return idx !== undefined ? `${idx}. ${parts.join("  |  ")}` : parts.join("  |  ");
+      }
+
+      const cheapest = allFlights[0];
+      const output = [];
+      output.push("CHEAPEST: " + fmt(cheapest));
+      output.push("");
+
+      // Deduplicate alternatives by airline+time
+      const seen = new Set([`${cheapest.airline}${cheapest.departure}`]);
+      const alts = allFlights.filter((f) => {
+        const key = `${f.airline}${f.departure}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).slice(0, 4);
+
+      if (alts.length > 0) {
+        output.push("Other options:");
+        alts.forEach((f, i) => output.push(fmt(f, i + 1)));
+      }
+
+      output.push("");
+      const sourceSummary = params.sources.map((s) => {
+        const best = allFlights.filter((f) => f.source === s.name)[0];
+        return best ? `${s.name}: from ₹${best.price.toLocaleString("en-IN")}` : `${s.name}: no results`;
+      });
+      output.push(`Compared: ${sourceSummary.join("  vs  ")}`);
+
+      result = output.join("\n");
+      break;
+    }
+
     case "extractDom": {
       // Extract data directly via page.evaluate with CSS selectors
       // params.selector: CSS selector for items, params.text_selector: inner selector for text, params.max_results

@@ -361,16 +361,17 @@ async function startServer() {
     }
 
     const taskId = genId();
+    const templateVars = req.body.templateVars || {};
     const task = {
       id: taskId,
       instruction,
+      templateVars,
       status: "pending",
       steps: [],
       result: null,
       error: null,
       mode: null,
       recipe_id: null,
-
       duration_ms: 0,
       created_at: new Date().toISOString(),
       completed_at: null,

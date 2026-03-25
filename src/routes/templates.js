@@ -19,6 +19,7 @@ router.get("/", async (_req, res) => {
         description: t.description,
         category: t.category,
         icon: t.icon,
+        recipe_id: t.recipe_id,
         instruction_template: t.instruction_template,
         variables: t.variables,
         usage_count: t.usage_count,
@@ -81,11 +82,13 @@ router.post("/:id/run", requireAuth, async (req, res) => {
     template.usage_count += 1;
     await template.save().catch(() => {});
 
-    // Return the filled instruction — server.js will handle task creation
+    // Return the filled instruction + raw variables for recipe execution
     res.json({
       instruction,
       template_id: template._id,
       template_name: template.name,
+      recipe_id: template.recipe_id || null,
+      variables,
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to run template" });

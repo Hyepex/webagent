@@ -21,6 +21,7 @@ const templateSchema = new mongoose.Schema({
     required: true,
   },
   instruction_template: { type: String, required: true },
+  recipe_id: { type: String, default: null },
   variables: [variableSchema],
   icon: { type: String, default: "" },
   usage_count: { type: Number, default: 0 },

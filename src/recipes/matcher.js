@@ -80,6 +80,12 @@ async function matchRecipe(instruction) {
 
 // ─── Merge variables from regex extraction + template vars + recipe defaults ─
 
+// Common template → recipe variable name mappings
+const VAR_ALIASES = {
+  trip_type: "tripType",
+  return_date: "returnDate",
+};
+
 function mergeVariables(extracted, templateVars, recipeDef) {
   const merged = { ...extracted };
 
@@ -88,9 +94,15 @@ function mergeVariables(extracted, templateVars, recipeDef) {
     for (const [key, value] of Object.entries(templateVars)) {
       if (value !== undefined && value !== null && value !== "") {
         merged[key] = value;
+        // Also set aliased name so recipe can find it
+        if (VAR_ALIASES[key]) merged[VAR_ALIASES[key]] = value;
       }
     }
   }
+
+  // Normalize trip type values
+  if (merged.tripType === "One way" || merged.trip_type === "One way") merged.tripType = "one-way";
+  if (merged.tripType === "Round trip" || merged.trip_type === "Round trip") merged.tripType = "round-trip";
 
   // Apply defaults from recipe definition for missing required vars
   const varDefs = recipeDef.variables || {};

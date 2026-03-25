@@ -1,0 +1,168 @@
+{
+  "id": "flight_compare",
+  "name": "Flight Price Comparison — Google Flights + Kayak",
+  "variables": {
+    "origin": {
+      "label": "From city",
+      "required": true,
+      "example": "Mumbai"
+    },
+    "destination": {
+      "label": "To city",
+      "required": true,
+      "example": "Goa"
+    },
+    "date": {
+      "label": "Departure date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "returnDate": {
+      "label": "Return date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "tripType": {
+      "label": "Trip type",
+      "required": false,
+      "default": "one-way"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_google_url",
+      "action": "buildUrl",
+      "comment": "Build Google Flights URL with protobuf encoding",
+      "params": {
+        "builder": "google-flights",
+        "args": {
+          "origin": "{{origin}}",
+          "destination": "{{destination}}",
+          "date": "{{date}}",
+          "returnDate": "{{returnDate}}",
+          "tripType": "{{tripType}}"
+        }
+      },
+      "store_as": "google_url"
+    },
+    {
+      "id": "goto_google",
+      "action": "goto",
+      "comment": "Navigate to Google Flights results",
+      "params": {
+        "url": "{{google_url}}"
+      }
+    },
+    {
+      "id": "wait_google",
+      "action": "waitForAny",
+      "params": {
+        "selectors": [
+          "text=results returned",
+          "text=departing flights"
+        ],
+        "timeout": 15000
+      },
+      "optional": true
+    },
+    {
+      "id": "extract_google",
+      "action": "extractList",
+      "comment": "Extract top 5 flights from Google Flights",
+      "params": {
+        "heading": "Search results",
+        "max_results": 5
+      },
+      "store_as": "google_flights"
+    },
+    {
+      "id": "build_kayak_url",
+      "action": "buildUrl",
+      "comment": "Build Kayak URL with IATA codes",
+      "params": {
+        "builder": "kayak",
+        "args": {
+          "origin": "{{origin}}",
+          "destination": "{{destination}}",
+          "date": "{{date}}",
+          "returnDate": "{{returnDate}}",
+          "tripType": "{{tripType}}"
+        }
+      },
+      "store_as": "kayak_url"
+    },
+    {
+      "id": "goto_kayak",
+      "action": "goto",
+      "comment": "Navigate to Kayak results (sorted by price)",
+      "params": {
+        "url": "{{kayak_url}}"
+      }
+    },
+    {
+      "id": "wait_kayak",
+      "action": "waitFor",
+      "comment": "Wait for Kayak results to load (they take longer)",
+      "params": {
+        "seconds": 10
+      }
+    },
+    {
+      "id": "extract_kayak",
+      "action": "extractDom",
+      "comment": "Extract top 5 flights from Kayak via .nrc6-inner cards",
+      "params": {
+        "selector": ".nrc6-inner",
+        "max_results": 5
+      },
+      "store_as": "kayak_flights"
+    },
+    {
+      "id": "compare",
+      "action": "comparePrices",
+      "comment": "Compare prices across both sources and find cheapest",
+      "params": {
+        "sources": [
+          {
+            "name": "Google Flights",
+            "ctx_key": "google_flights"
+          },
+          {
+            "name": "Kayak",
+            "ctx_key": "kayak_flights"
+          }
+        ]
+      },
+      "store_as": "comparison"
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{comparison}}"
+      }
+    }
+  ],
+  "success_count": 6,
+  "fail_count": 0,
+  "avg_duration_ms": 19020,
+  "last_used": "2026-03-25T20:03:05.834Z",
+  "version": 1,
+  "domain": "multiple",
+  "tags": [
+    "travel",
+    "flights",
+    "comparison"
+  ],
+  "match": {
+    "keywords": [
+      "flight",
+      "flights",
+      "fly",
+      "flying",
+      "cheapest flight",
+      "compare"
+    ],
+    "pattern": "(?:flight|flights|fly|cheapest).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
+  }
+}

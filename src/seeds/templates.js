@@ -70,12 +70,14 @@ const SEED_TEMPLATES = [
     name: "Flight Search",
     category: "travel",
     icon: "\u2708\uFE0F",
-    description: "Search for flights between two cities",
+    recipe_id: "flight_compare",
+    description: "Compare flight prices across Google Flights and Kayak",
     instruction_template: "Search for {{trip_type}} flights from {{origin}} to {{destination}} on {{date}}",
     variables: [
       { name: "origin", label: "From", type: "text", placeholder: "Mumbai, Dubai, etc." },
       { name: "destination", label: "To", type: "text", placeholder: "Goa, London, etc." },
       { name: "date", label: "Departure date", type: "text", placeholder: "2026-04-15 or leave empty for tomorrow" },
+      { name: "returnDate", label: "Return date (for round trip)", type: "text", placeholder: "2026-04-22 or leave empty" },
       { name: "trip_type", label: "Trip type", type: "select", options: ["One way", "Round trip"] },
     ],
   },
@@ -94,14 +96,16 @@ const SEED_TEMPLATES = [
 
 async function seedTemplates() {
   try {
-    const count = await Template.countDocuments();
-    if (count > 0) {
-      log.info(`Templates already seeded (${count} found)`);
-      return;
+    // Upsert each template by name — updates existing, inserts new
+    for (const tmpl of SEED_TEMPLATES) {
+      await Template.findOneAndUpdate(
+        { name: tmpl.name },
+        { $set: tmpl },
+        { upsert: true, returnDocument: "after" }
+      );
     }
-
-    await Template.insertMany(SEED_TEMPLATES);
-    log.success(`Seeded ${SEED_TEMPLATES.length} task templates`);
+    const count = await Template.countDocuments();
+    log.info(`Templates synced (${count} total)`);
   } catch (err) {
     log.warn(`Template seeding failed: ${err.message}`);
   }

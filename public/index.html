@@ -1034,8 +1034,8 @@ function App() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to run template');
     setSelectedTemplate(null);
-    // Submit the filled instruction as a task
-    submitTask(data.instruction);
+    // Submit the filled instruction as a task, passing raw template variables
+    submitTask(data.instruction, data.variables);
   }
 
   async function createSchedule(scheduleData) {
@@ -1076,7 +1076,7 @@ function App() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   }
 
-  const submitTask = useCallback(async (instr) => {
+  const submitTask = useCallback(async (instr, templateVars) => {
     const text = (instr || instruction).trim();
     if (!text) return;
 
@@ -1098,10 +1098,12 @@ function App() {
     setReplayMode(false);
 
     try {
+      const body = { instruction: text };
+      if (templateVars) body.templateVars = templateVars;
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ instruction: text }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
 
