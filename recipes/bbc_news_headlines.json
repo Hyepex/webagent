@@ -9,7 +9,8 @@
       "comment": "Navigate directly to BBC News",
       "params": {
         "url": "https://www.bbc.com/news"
-      }
+      },
+      "timeout": 45000
     },
     {
       "id": "wait_for_page",
@@ -32,7 +33,15 @@
         "selector": "[data-testid='card-headline']",
         "max_results": 10
       },
-      "store_as": "headlines"
+      "store_as": "headlines",
+      "validate": {
+        "min_length": 50,
+        "min_lines": 3,
+        "must_not_contain": [
+          "CAPTCHA",
+          "access denied"
+        ]
+      }
     },
     {
       "id": "done",
@@ -42,10 +51,10 @@
       }
     }
   ],
-  "success_count": 2,
+  "success_count": 5,
   "fail_count": 0,
-  "avg_duration_ms": 3069,
-  "last_used": "2026-03-25T19:19:27.105Z",
+  "avg_duration_ms": 2927,
+  "last_used": "2026-03-27T08:11:24.800Z",
   "version": 1,
   "domain": "bbc.com",
   "tags": [
@@ -59,5 +68,14 @@
       "bbc"
     ],
     "pattern": "(?:headlines|news|top stories).*(?:from\\s+)?(?:bbc|BBC)?"
+  },
+  "test": {
+    "variables": {},
+    "expect": {
+      "success": true,
+      "result_min_length": 100,
+      "min_lines": 3,
+      "max_duration_ms": 20000
+    }
   }
 }

@@ -19,7 +19,8 @@
           "topic": "{{topic}}"
         }
       },
-      "store_as": "url"
+      "store_as": "url",
+      "retry": false
     },
     {
       "id": "navigate",
@@ -59,7 +60,13 @@
           }
         ]
       },
-      "store_as": "wiki_result"
+      "store_as": "wiki_result",
+      "validate": {
+        "min_length": 100,
+        "must_not_contain": [
+          "Wikipedia does not have an article"
+        ]
+      }
     },
     {
       "id": "done",
@@ -69,10 +76,10 @@
       }
     }
   ],
-  "success_count": 4,
+  "success_count": 7,
   "fail_count": 1,
-  "avg_duration_ms": 1319,
-  "last_used": "2026-03-25T19:21:59.411Z",
+  "avg_duration_ms": 1196,
+  "last_used": "2026-03-27T08:11:47.930Z",
   "version": 1,
   "domain": "en.wikipedia.org",
   "tags": [
@@ -85,5 +92,15 @@
       "wiki"
     ],
     "pattern": "(?:wikipedia|wiki)\\s+(?:about|for|on)\\s+(?<topic>[\\w\\s]+)"
+  },
+  "test": {
+    "variables": {
+      "topic": "India"
+    },
+    "expect": {
+      "success": true,
+      "result_min_length": 200,
+      "max_duration_ms": 15000
+    }
   }
 }

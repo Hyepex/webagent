@@ -43,7 +43,8 @@
           "tripType": "{{tripType}}"
         }
       },
-      "store_as": "google_url"
+      "store_as": "google_url",
+      "retry": false
     },
     {
       "id": "goto_google",
@@ -51,7 +52,8 @@
       "comment": "Navigate to Google Flights results",
       "params": {
         "url": "{{google_url}}"
-      }
+      },
+      "timeout": 45000
     },
     {
       "id": "wait_google",
@@ -89,7 +91,8 @@
           "tripType": "{{tripType}}"
         }
       },
-      "store_as": "kayak_url"
+      "store_as": "kayak_url",
+      "retry": false
     },
     {
       "id": "goto_kayak",
@@ -97,7 +100,8 @@
       "comment": "Navigate to Kayak results (sorted by price)",
       "params": {
         "url": "{{kayak_url}}"
-      }
+      },
+      "timeout": 45000
     },
     {
       "id": "wait_kayak",
@@ -133,7 +137,20 @@
           }
         ]
       },
-      "store_as": "comparison"
+      "store_as": "comparison",
+      "validate": {
+        "min_length": 50,
+        "must_contain": [
+          "₹|\\$|USD|INR"
+        ],
+        "must_not_contain": [
+          "CAPTCHA",
+          "unusual traffic",
+          "verify you are human",
+          "blocked"
+        ],
+        "min_lines": 1
+      }
     },
     {
       "id": "done",
@@ -143,10 +160,10 @@
       }
     }
   ],
-  "success_count": 6,
+  "success_count": 9,
   "fail_count": 0,
-  "avg_duration_ms": 19020,
-  "last_used": "2026-03-25T20:03:05.834Z",
+  "avg_duration_ms": 18806,
+  "last_used": "2026-03-27T08:11:45.187Z",
   "version": 1,
   "domain": "multiple",
   "tags": [
@@ -164,5 +181,21 @@
       "compare"
     ],
     "pattern": "(?:flight|flights|fly|cheapest).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
+  },
+  "test": {
+    "variables": {
+      "origin": "Mumbai",
+      "destination": "Delhi",
+      "date": "2026-06-01",
+      "tripType": "one-way"
+    },
+    "expect": {
+      "success": true,
+      "result_min_length": 50,
+      "result_contains": [
+        "₹|\\$|INR"
+      ],
+      "max_duration_ms": 60000
+    }
   }
 }

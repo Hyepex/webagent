@@ -4,6 +4,9 @@ const { createLogger } = require("../utils/logger");
 
 const log = createLogger("recipe-exec");
 
+const MAX_RETRIES = 3;
+const RETRY_DELAYS = [1000, 2000, 3000];
+
 // ─── Variable Interpolation ──────────────────────────────────────────────────
 
 function interpolate(str, ctx) {
@@ -32,6 +35,17 @@ async function takeScreenshot(browser) {
     return buf.toString("base64");
   } catch {
     return null;
+  }
+}
+
+// ─── Page Health Check ───────────────────────────────────────────────────────
+
+async function checkPageAlive(page) {
+  try {
+    await page.evaluate(() => document.readyState);
+    return true;
+  } catch (err) {
+    throw new Error(`Page not responsive: ${err.message}`);
   }
 }
 
@@ -153,6 +167,49 @@ async function checkAssert(page, assert) {
   }
 }
 
+// ─── Result Validation ───────────────────────────────────────────────────────
+
+function validateResult(result, validate) {
+  if (!validate) return { valid: true };
+  const text = String(result);
+  const errors = [];
+
+  if (validate.min_length && text.length < validate.min_length) {
+    errors.push(`Result too short: ${text.length} chars (min: ${validate.min_length})`);
+  }
+
+  if (validate.max_length && text.length > validate.max_length) {
+    errors.push(`Result too long: ${text.length} chars (max: ${validate.max_length})`);
+  }
+
+  if (validate.min_lines) {
+    const lineCount = text.split("\n").filter((l) => l.trim()).length;
+    if (lineCount < validate.min_lines) {
+      errors.push(`Too few result lines: ${lineCount} (min: ${validate.min_lines})`);
+    }
+  }
+
+  if (validate.must_contain) {
+    for (const pattern of validate.must_contain) {
+      if (!new RegExp(pattern, "i").test(text)) {
+        errors.push(`Result missing required pattern: ${pattern}`);
+      }
+    }
+  }
+
+  if (validate.must_not_contain) {
+    for (const pattern of validate.must_not_contain) {
+      if (new RegExp(pattern, "i").test(text)) {
+        errors.push(`Result contains blocked pattern: ${pattern}`);
+      }
+    }
+  }
+
+  return errors.length > 0
+    ? { valid: false, errors }
+    : { valid: true };
+}
+
 // ─── Structured Extraction ───────────────────────────────────────────────────
 
 async function extractStructured(page, params) {
@@ -252,6 +309,9 @@ async function execStep(page, step, ctx, browser) {
   if (step.delay_before) {
     await new Promise((r) => setTimeout(r, step.delay_before));
   }
+
+  // Check page is responsive before interacting
+  await checkPageAlive(page);
 
   let result;
 
@@ -599,27 +659,81 @@ async function executeRecipe(recipe, variables, browser, callbacks = {}) {
 
     const step = recipe.steps[i];
     const stepNum = i + 1;
+    const stepId = step.id || `step_${stepNum}`;
 
     log.step(stepNum, `▶ ${step.action}${step.id ? ` [${step.id}]` : ""}`);
 
     try {
-      const result = await execStep(browser.page, step, ctx, browser);
+      // ── Per-step retry with backoff ──
+      let result;
+      let lastError;
+      const maxAttempts = step.retry === false ? 1 : MAX_RETRIES;
 
-      // Store result in context if requested
-      if (step.store_as) {
-        ctx[step.store_as] = String(result);
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const stepTimeout = step.timeout || 30000;
+          let timeoutId;
+          try {
+            result = await Promise.race([
+              execStep(browser.page, step, ctx, browser),
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error(`Step timed out after ${stepTimeout}ms`)), stepTimeout);
+              }),
+            ]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attempt < maxAttempts) {
+            log.warn(`Step ${stepNum} attempt ${attempt}/${maxAttempts} failed: ${err.message}. Retrying in ${RETRY_DELAYS[attempt - 1]}ms...`);
+            const retryScreenshot = await takeScreenshot(browser);
+            if (retryScreenshot) {
+              steps.push({
+                step_number: stepNum,
+                step_id: `${stepId}_retry_${attempt}`,
+                action: "retry_screenshot",
+                params: {},
+                result: `Retry ${attempt}: ${err.message}`,
+                screenshot_base64: retryScreenshot,
+                page_url: browser.page.url(),
+                page_title: await browser.page.title().catch(() => ""),
+                timestamp: new Date().toISOString(),
+                source: "recipe",
+              });
+            }
+            await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt - 1]));
+          }
+        }
       }
 
+      if (lastError) throw lastError;
+
+      // ── Store result in context ──
+      if (step.store_as) ctx[step.store_as] = String(result);
+
+      // ── Validate result ──
+      if (step.validate) {
+        const validation = validateResult(result, step.validate);
+        if (!validation.valid) {
+          throw new Error(`Validation failed: ${validation.errors.join("; ")}`);
+        }
+      }
+
+      // ── Success: screenshot + step data ──
       const screenshot = await takeScreenshot(browser);
       const stepData = {
         step_number: stepNum,
+        step_id: stepId,
         thought: step.comment || null,
         action: step.action,
         params: interpolateDeep(step.params || {}, ctx),
         result: String(result).substring(0, 500),
         screenshot_base64: screenshot,
         page_url: browser.page.url(),
-        page_title: await browser.page.title(),
+        page_title: await browser.page.title().catch(() => ""),
         timestamp: new Date().toISOString(),
         source: "recipe",
       };
@@ -633,29 +747,47 @@ async function executeRecipe(recipe, variables, browser, callbacks = {}) {
         return { success: true, result: String(result), steps, duration_ms: durationMs };
       }
     } catch (err) {
+      // ── ALWAYS screenshot on failure ──
+      const failScreenshot = await takeScreenshot(browser);
+
       if (step.optional) {
-        log.warn(`Optional step ${stepNum} failed (continuing): ${err.message}`);
-        const screenshot = await takeScreenshot(browser);
-        const stepData = {
+        log.warn(`Step ${stepNum} (optional) skipped: ${err.message}`);
+        steps.push({
           step_number: stepNum,
-          thought: step.comment || null,
+          step_id: stepId,
           action: step.action,
-          params: interpolateDeep(step.params || {}, ctx),
-          result: `[SKIPPED] ${err.message}`,
-          screenshot_base64: screenshot,
+          params: step.params || {},
+          result: `Skipped: ${err.message}`,
+          screenshot_base64: failScreenshot,
           page_url: browser.page.url(),
-          page_title: await browser.page.title(),
+          page_title: await browser.page.title().catch(() => ""),
           timestamp: new Date().toISOString(),
           source: "recipe",
-        };
-        steps.push(stepData);
-        if (onStep) onStep(stepData);
+          failed: true,
+          optional: true,
+        });
+        if (onStep) onStep(steps[steps.length - 1]);
         continue;
       }
 
-      log.error(`Recipe step ${stepNum} failed: ${err.message}`);
+      log.error(`Step ${stepNum} (${stepId}) FAILED: ${err.message}`);
+      steps.push({
+        step_number: stepNum,
+        step_id: stepId,
+        action: step.action,
+        params: step.params || {},
+        result: `FAILED: ${err.message}`,
+        screenshot_base64: failScreenshot,
+        page_url: browser.page.url(),
+        page_title: await browser.page.title().catch(() => ""),
+        timestamp: new Date().toISOString(),
+        source: "recipe",
+        failed: true,
+      });
+      if (onStep) onStep(steps[steps.length - 1]);
+
       updateRecipeStats(recipe.id, false, Date.now() - startTime).catch(() => {});
-      return { success: false, failed_at_step: stepNum, result: err.message, steps };
+      return { success: false, failed_at_step: stepNum, result: err.message, steps, duration_ms: Date.now() - startTime };
     }
   }
 

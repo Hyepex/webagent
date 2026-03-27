@@ -19,14 +19,16 @@
           "product": "{{product}}"
         }
       },
-      "store_as": "url"
+      "store_as": "url",
+      "retry": false
     },
     {
       "id": "navigate",
       "action": "goto",
       "params": {
         "url": "{{url}}"
-      }
+      },
+      "timeout": 45000
     },
     {
       "id": "wait_for_results",
@@ -67,7 +69,19 @@
         "max_results": 5,
         "fallback_action": "getText"
       },
-      "store_as": "products"
+      "store_as": "products",
+      "validate": {
+        "min_length": 30,
+        "must_contain": [
+          "₹"
+        ],
+        "must_not_contain": [
+          "CAPTCHA",
+          "robot",
+          "automated"
+        ],
+        "min_lines": 1
+      }
     },
     {
       "id": "done",
@@ -77,10 +91,10 @@
       }
     }
   ],
-  "success_count": 3,
+  "success_count": 6,
   "fail_count": 0,
-  "avg_duration_ms": 16010,
-  "last_used": "2026-03-25T19:30:28.629Z",
+  "avg_duration_ms": 15368,
+  "last_used": "2026-03-27T08:11:22.012Z",
   "version": 1,
   "domain": "amazon.in",
   "tags": [
@@ -96,5 +110,18 @@
       "amazon"
     ],
     "pattern": "(?:find|search|price|cheapest|buy|cost).*?(?<product>[\\w\\s]+?)(?:\\s+on\\s+amazon|$)"
+  },
+  "test": {
+    "variables": {
+      "product": "iPhone 15"
+    },
+    "expect": {
+      "success": true,
+      "result_min_length": 30,
+      "result_contains": [
+        "₹"
+      ],
+      "max_duration_ms": 20000
+    }
   }
 }

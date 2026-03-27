@@ -19,7 +19,8 @@
           "city": "{{city}}"
         }
       },
-      "store_as": "url"
+      "store_as": "url",
+      "retry": false
     },
     {
       "id": "navigate",
@@ -91,7 +92,13 @@
           }
         ]
       },
-      "store_as": "weather_report"
+      "store_as": "weather_report",
+      "validate": {
+        "min_length": 20,
+        "must_contain": [
+          "temp|temperature|°C|°F|humidity|wind|Temperature|Humidity|Wind"
+        ]
+      }
     },
     {
       "id": "done",
@@ -101,10 +108,10 @@
       }
     }
   ],
-  "success_count": 1,
+  "success_count": 4,
   "fail_count": 0,
-  "avg_duration_ms": 1604,
-  "last_used": "2026-03-25T19:18:27.572Z",
+  "avg_duration_ms": 1617,
+  "last_used": "2026-03-27T08:11:46.843Z",
   "version": 1,
   "domain": "wttr.in",
   "tags": [
@@ -118,5 +125,15 @@
       "forecast"
     ],
     "pattern": "(?:weather|temperature|forecast).*(?:in|for|at)\\s+(?<city>[\\w\\s]+)"
+  },
+  "test": {
+    "variables": {
+      "city": "Mumbai"
+    },
+    "expect": {
+      "success": true,
+      "result_min_length": 20,
+      "max_duration_ms": 15000
+    }
   }
 }
