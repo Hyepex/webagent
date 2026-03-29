@@ -1,0 +1,121 @@
+{
+  "id": "google_flights_search",
+  "name": "Google Flights Search",
+  "variables": {
+    "origin": {
+      "label": "From city",
+      "required": true,
+      "example": "Mumbai"
+    },
+    "destination": {
+      "label": "To city",
+      "required": true,
+      "example": "Goa"
+    },
+    "date": {
+      "label": "Departure date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "returnDate": {
+      "label": "Return date (YYYY-MM-DD)",
+      "required": false,
+      "default": ""
+    },
+    "tripType": {
+      "label": "Trip type",
+      "required": false,
+      "default": "one-way"
+    }
+  },
+  "steps": [
+    {
+      "id": "build_url",
+      "action": "buildUrl",
+      "comment": "Build Google Flights URL with protobuf encoding",
+      "params": {
+        "builder": "google-flights",
+        "args": {
+          "origin": "{{origin}}",
+          "destination": "{{destination}}",
+          "date": "{{date}}",
+          "returnDate": "{{returnDate}}",
+          "tripType": "{{tripType}}"
+        }
+      },
+      "store_as": "flights_url",
+      "retry": false
+    },
+    {
+      "id": "goto_flights",
+      "action": "goto",
+      "comment": "Navigate to Google Flights results",
+      "params": {
+        "url": "{{flights_url}}"
+      },
+      "timeout": 45000
+    },
+    {
+      "id": "wait_results",
+      "action": "waitForAny",
+      "comment": "Wait for flight results — price elements or departure text",
+      "params": {
+        "selectors": [
+          "[aria-label*=\"rupees\"]",
+          "text=departing flights"
+        ],
+        "timeout": 20000
+      },
+      "optional": true
+    },
+    {
+      "id": "extract_flights",
+      "action": "extractFlights",
+      "comment": "Extract flights via POC-verified aria-label parsing: div[role=link][aria-label*=flight with]",
+      "params": {
+        "max_results": 5
+      },
+      "delay_before": 2000,
+      "store_as": "flights_result",
+      "validate": {
+        "min_length": 20,
+        "must_contain": [
+          "₹|\\$|USD|INR"
+        ],
+        "must_not_contain": [
+          "CAPTCHA",
+          "unusual traffic",
+          "verify you are human",
+          "blocked"
+        ],
+        "min_lines": 1
+      }
+    },
+    {
+      "id": "done",
+      "action": "done",
+      "params": {
+        "result": "{{flights_result}}"
+      }
+    }
+  ],
+  "success_count": 4,
+  "fail_count": 0,
+  "avg_duration_ms": 6127,
+  "last_used": "2026-03-29T09:24:26.958Z",
+  "version": 1,
+  "domain": "google.com",
+  "tags": [
+    "travel",
+    "flights"
+  ],
+  "match": {
+    "keywords": [
+      "flight",
+      "flights",
+      "search",
+      "fly"
+    ],
+    "pattern": "(?:flight|flights|fly|search).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
+  }
+}
