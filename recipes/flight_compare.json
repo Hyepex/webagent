@@ -69,10 +69,9 @@
     },
     {
       "id": "extract_google",
-      "action": "extractList",
-      "comment": "Extract top 5 flights from Google Flights",
+      "action": "extractFlights",
+      "comment": "Extract top 5 flights via stable aria-label selectors",
       "params": {
-        "heading": "Search results",
         "max_results": 5
       },
       "store_as": "google_flights"
@@ -160,10 +159,10 @@
       }
     }
   ],
-  "success_count": 9,
-  "fail_count": 0,
-  "avg_duration_ms": 18806,
-  "last_used": "2026-03-27T08:11:45.187Z",
+  "success_count": 13,
+  "fail_count": 2,
+  "avg_duration_ms": 19132,
+  "last_used": "2026-03-29T08:40:19.414Z",
   "version": 1,
   "domain": "multiple",
   "tags": [
@@ -185,16 +184,16 @@
   "test": {
     "variables": {
       "origin": "Mumbai",
-      "destination": "Delhi",
-      "date": "2026-06-01",
+      "destination": "Goa",
       "tripType": "one-way"
     },
     "expect": {
       "success": true,
       "result_min_length": 50,
       "result_contains": [
-        "₹|\\$|INR"
+        "₹"
       ],
+      "min_lines": 1,
       "max_duration_ms": 60000
     }
   }

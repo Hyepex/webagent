@@ -465,6 +465,103 @@ async function execStep(page, step, ctx, browser) {
       break;
     }
 
+    case "extractFlights": {
+      // Extract flight data from Google Flights using stable aria-label selectors.
+      // PRIMARY: Parse div[role="link"][aria-label*="flight with"] — each aria-label
+      //   contains price, airline, times, duration, stops in one sentence.
+      // FALLBACK: Per-field aria-label spans inside li cards.
+      // Output: one line per flight, formatted for comparePrices compatibility.
+      const maxFlights = params.max_results || 5;
+
+      const flights = await page.evaluate((max) => {
+        const links = document.querySelectorAll('div[role="link"][aria-label*="flight with"]');
+        const results = [];
+        const seen = new Set();
+
+        for (const link of links) {
+          if (results.length >= max) break;
+          const label = link.getAttribute("aria-label") || "";
+          if (/price is unavailable/i.test(label)) continue;
+          if (!/Indian rupees/i.test(label)) continue;
+
+          const priceMatch = label.match(/(\d[\d,]*)\s*Indian rupees/i);
+          const priceNum = priceMatch ? parseInt(priceMatch[1].replace(/,/g, "")) : null;
+          if (!priceNum) continue;
+
+          const airlineMatch = label.match(/flight with\s+(.+?)\.\s/i);
+          const airline = airlineMatch ? airlineMatch[1].trim() : "";
+
+          const timeMatches = [...label.matchAll(/at\s+(\d{1,2}:\d{2}\s*(?:AM|PM))\s+on/gi)];
+          const departure = timeMatches.length >= 1 ? timeMatches[0][1].trim() : "";
+          const arrival = timeMatches.length >= 2 ? timeMatches[1][1].trim() : "";
+
+          const durMatch = label.match(/Total duration\s+(.+?)\.?\s*(?:Select|$)/i);
+          const duration = durMatch ? durMatch[1].trim().replace(/\..*/,"") : "";
+
+          let stops = "";
+          if (/nonstop/i.test(label)) stops = "Nonstop";
+          else { const s = label.match(/(\d+)\s*stop/i); stops = s ? s[1] + " stop" : ""; }
+
+          if (!departure) continue;
+          const key = airline + departure;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          results.push({ airline, departure, arrival, duration, stops, priceNum });
+        }
+        return results;
+      }, maxFlights);
+
+      // FALLBACK: if primary found nothing, try per-field aria-label spans
+      let finalFlights = flights;
+      if (flights.length === 0) {
+        log.warn("extractFlights: primary strategy found 0, trying fallback");
+        finalFlights = await page.evaluate((max) => {
+          const cards = document.querySelectorAll("li");
+          const results = [];
+          const seen = new Set();
+          const knownAirlines = ["IndiGo","Air India Express","Air India","Akasa Air","SpiceJet","Vistara","GoFirst","Etihad","Emirates","Qatar Airways","Lufthansa","British Airways","Singapore Airlines","Alliance Air","AirAsia India","Flydubai","Oman Air"];
+          for (const card of cards) {
+            if (results.length >= max) break;
+            const priceEl = card.querySelector('span[role="text"][aria-label*="rupees"]');
+            if (!priceEl) continue;
+            const priceNum = parseInt(priceEl.textContent.replace(/[^\d]/g,"")) || null;
+            if (!priceNum) continue;
+            const depEl = card.querySelector('[aria-label^="Departure time"]');
+            const departure = depEl ? depEl.textContent.trim() : "";
+            if (!departure) continue;
+            const arrEl = card.querySelector('[aria-label^="Arrival time"]');
+            const arrival = arrEl ? arrEl.textContent.trim() : "";
+            const durEl = card.querySelector('[aria-label^="Total duration"]');
+            const duration = durEl ? durEl.textContent.trim() : "";
+            const stopsEl = card.querySelector('[aria-label*="Nonstop"]') || card.querySelector('[aria-label*="stop flight"]');
+            const stops = stopsEl ? stopsEl.textContent.trim() : "";
+            let airline = "";
+            for (const sp of card.querySelectorAll("span")) {
+              const t = sp.textContent.trim();
+              if (knownAirlines.some(a => t === a)) { airline = t; break; }
+            }
+            const key = airline + departure;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            results.push({ airline, departure, arrival, duration, stops, priceNum });
+          }
+          return results;
+        }, maxFlights);
+      }
+
+      // Format: one line per flight, compatible with comparePrices parser
+      if (finalFlights.length > 0) {
+        result = finalFlights.map((f, i) => {
+          const price = "₹" + f.priceNum.toLocaleString("en-IN");
+          return `[${i+1}] ${f.airline} ${f.departure} – ${f.arrival} ${f.duration} ${f.stops} ${price}`;
+        }).join("\n");
+      } else {
+        result = "No flights found";
+      }
+      break;
+    }
+
     case "fetchJson": {
       // Try to parse the current page body as JSON first (for API endpoints we already navigated to)
       // Fall back to fetch if a different URL is provided
