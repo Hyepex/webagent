@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-29T10:49:16.106Z",
+  "timestamp": "2026-04-03T09:01:48.505Z",
   "summary": {
     "passed": 5,
     "failed": 0,
@@ -10,31 +10,31 @@
       "recipe": "Amazon India Price Search",
       "passed": true,
       "errors": [],
-      "duration_ms": 17390
+      "duration_ms": 14268
     },
     {
       "recipe": "BBC News Headlines",
       "passed": true,
       "errors": [],
-      "duration_ms": 2666
+      "duration_ms": 3550
     },
     {
       "recipe": "Google Flights Search",
       "passed": true,
       "errors": [],
-      "duration_ms": 6315
+      "duration_ms": 6039
     },
     {
       "recipe": "Weather Check",
       "passed": true,
       "errors": [],
-      "duration_ms": 1624
+      "duration_ms": 1622
     },
     {
       "recipe": "Wikipedia Lookup",
       "passed": true,
       "errors": [],
-      "duration_ms": 1320
+      "duration_ms": 1022
     }
   ]
 }

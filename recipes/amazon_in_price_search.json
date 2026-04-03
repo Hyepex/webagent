@@ -91,10 +91,10 @@
       }
     }
   ],
-  "success_count": 8,
+  "success_count": 11,
   "fail_count": 0,
-  "avg_duration_ms": 15362,
-  "last_used": "2026-03-29T10:49:04.119Z",
+  "avg_duration_ms": 15226,
+  "last_used": "2026-04-03T09:01:36.195Z",
   "version": 1,
   "domain": "amazon.in",
   "tags": [
