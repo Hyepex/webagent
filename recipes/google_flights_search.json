@@ -99,10 +99,10 @@
       }
     }
   ],
-  "success_count": 11,
+  "success_count": 15,
   "fail_count": 0,
-  "avg_duration_ms": 6150,
-  "last_used": "2026-04-03T09:17:30.755Z",
+  "avg_duration_ms": 6065,
+  "last_used": "2026-04-03T09:27:11.197Z",
   "version": 1,
   "domain": "google.com",
   "tags": [

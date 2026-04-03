@@ -108,10 +108,10 @@
       }
     }
   ],
-  "success_count": 10,
+  "success_count": 14,
   "fail_count": 0,
-  "avg_duration_ms": 1611,
-  "last_used": "2026-04-03T09:17:32.312Z",
+  "avg_duration_ms": 1579,
+  "last_used": "2026-04-03T09:27:12.789Z",
   "version": 1,
   "domain": "wttr.in",
   "tags": [

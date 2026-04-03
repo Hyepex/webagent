@@ -1,3 +1,5 @@
+"use strict";
+
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 
@@ -31,26 +33,17 @@ const config = {
     maxGetText: parseInt(process.env.MAX_GET_TEXT) || 3000,
     maxHistoryMessages: parseInt(process.env.MAX_HISTORY) || 14,
   },
+  // SSE transport port (used when started with --sse)
   server: {
     port: parseInt(process.env.PORT) || 3000,
-    host: process.env.HOST || "0.0.0.0",
   },
   paths: {
     root: ROOT,
-    public: path.join(ROOT, "public"),
     screenshots: path.join(ROOT, "screenshots"),
     recipes: path.join(ROOT, "recipes"),
   },
   recipes: {
     matchThreshold: parseFloat(process.env.RECIPE_MATCH_THRESHOLD) || 0.6,
-    maxCaptureSteps: parseInt(process.env.RECIPE_MAX_CAPTURE_STEPS) || 15,
-  },
-  auth: {
-    jwtSecret: process.env.JWT_SECRET || "webagent-dev-secret-change-me",
-    googleClientId: process.env.GOOGLE_CLIENT_ID || "",
-  },
-  db: {
-    uri: process.env.MONGODB_URI || "mongodb://localhost:27017/webagent",
   },
 };
 

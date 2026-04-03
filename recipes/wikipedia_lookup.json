@@ -76,10 +76,10 @@
       }
     }
   ],
-  "success_count": 13,
+  "success_count": 17,
   "fail_count": 1,
-  "avg_duration_ms": 1136,
-  "last_used": "2026-04-03T09:17:33.431Z",
+  "avg_duration_ms": 1116,
+  "last_used": "2026-04-03T09:27:14.124Z",
   "version": 1,
   "domain": "en.wikipedia.org",
   "tags": [

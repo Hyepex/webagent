@@ -51,10 +51,10 @@
       }
     }
   ],
-  "success_count": 11,
+  "success_count": 15,
   "fail_count": 0,
-  "avg_duration_ms": 3336,
-  "last_used": "2026-04-03T09:17:24.171Z",
+  "avg_duration_ms": 3181,
+  "last_used": "2026-04-03T09:27:05.296Z",
   "version": 1,
   "domain": "bbc.com",
   "tags": [

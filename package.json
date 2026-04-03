@@ -2,25 +2,18 @@
   "name": "webagent",
   "version": "1.0.0",
   "description": "Autonomous AI-powered web browsing agent",
-  "main": "src/index.js",
+  "main": "src/mcp-server.js",
   "scripts": {
-    "start": "node src/index.js",
-    "server": "node src/server.js",
-    "docker:build": "docker compose build",
-    "docker:up": "docker compose up",
+    "start": "node src/mcp-server.js",
+    "start:sse": "node src/mcp-server.js --sse",
     "test": "node test-recipes.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bcryptjs": "^3.0.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "google-auth-library": "^10.6.2",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.3.1",
-    "playwright": "^1.58.2",
-    "socket.io": "^4.8.3"
+    "playwright": "^1.58.2"
   }
 }

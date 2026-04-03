@@ -13,7 +13,14 @@
       "Bash(gh repo:*)",
       "Bash(pkill -f \"node src/server.js\")",
       "Bash(taskkill /F /IM node.exe)",
-      "Bash(code:*)"
+      "Bash(code:*)",
+      "Bash(git push:*)",
+      "Bash(npm run:*)",
+      "Bash(find C:/Users/deepr/webagent -name .env* -o -name *.env)",
+      "Bash(git tag:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm test:*)",
+      "Bash(wait)"
     ]
   }
 }
