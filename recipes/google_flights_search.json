@@ -117,5 +117,22 @@
       "fly"
     ],
     "pattern": "(?:flight|flights|fly|search).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
+  },
+  "test": {
+    "variables": {
+      "origin": "Mumbai",
+      "destination": "Delhi",
+      "date": "",
+      "returnDate": "",
+      "tripType": "one-way"
+    },
+    "expect": {
+      "success": true,
+      "result_min_length": 20,
+      "result_contains": [
+        "₹"
+      ],
+      "max_duration_ms": 60000
+    }
   }
 }
