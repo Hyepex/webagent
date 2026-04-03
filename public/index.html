@@ -561,10 +561,13 @@ function TemplateModal({ template, onClose, onRun }) {
 
         <form onSubmit={handleSubmit}>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            {template.variables.map(v => (
+            {template.variables.filter(v => {
+              if (v.showWhen) return values[v.showWhen.field] === v.showWhen.value;
+              return true;
+            }).map(v => (
               <div key={v.name}>
                 <label style={{ display:'block', fontSize:12, fontWeight:600, color:'var(--text-muted)', marginBottom:4 }}>
-                  {v.label} {v.required !== false && <span style={{ color:'var(--red)' }}>*</span>}
+                  {v.label} {v.required !== false && !v.showWhen && <span style={{ color:'var(--red)' }}>*</span>}
                 </label>
                 {v.type === 'select' ? (
                   <select value={values[v.name]} onChange={e => setValue(v.name, e.target.value)}

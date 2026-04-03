@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-03-29T10:49:16.106Z",
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5
+  },
+  "results": [
+    {
+      "recipe": "Amazon India Price Search",
+      "passed": true,
+      "errors": [],
+      "duration_ms": 17390
+    },
+    {
+      "recipe": "BBC News Headlines",
+      "passed": true,
+      "errors": [],
+      "duration_ms": 2666
+    },
+    {
+      "recipe": "Google Flights Search",
+      "passed": true,
+      "errors": [],
+      "duration_ms": 6315
+    },
+    {
+      "recipe": "Weather Check",
+      "passed": true,
+      "errors": [],
+      "duration_ms": 1624
+    },
+    {
+      "recipe": "Wikipedia Lookup",
+      "passed": true,
+      "errors": [],
+      "duration_ms": 1320
+    }
+  ]
+}

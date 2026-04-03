@@ -104,6 +104,14 @@ function mergeVariables(extracted, templateVars, recipeDef) {
   if (merged.tripType === "One way" || merged.trip_type === "One way") merged.tripType = "one-way";
   if (merged.tripType === "Round trip" || merged.trip_type === "Round trip") merged.tripType = "round-trip";
 
+  // Convert DD/MM/YYYY dates to YYYY-MM-DD (URL builders expect YYYY-MM-DD)
+  for (const dateKey of ["date", "returnDate"]) {
+    if (merged[dateKey] && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(merged[dateKey])) {
+      const [d, m, y] = merged[dateKey].split("/");
+      merged[dateKey] = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+  }
+
   // Apply defaults from recipe definition for missing required vars
   const varDefs = recipeDef.variables || {};
   for (const [key, def] of Object.entries(varDefs)) {
