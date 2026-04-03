@@ -76,23 +76,16 @@
       }
     }
   ],
-  "success_count": 12,
+  "success_count": 13,
   "fail_count": 1,
-  "avg_duration_ms": 1141,
-  "last_used": "2026-04-03T09:01:48.437Z",
+  "avg_duration_ms": 1136,
+  "last_used": "2026-04-03T09:17:33.431Z",
   "version": 1,
   "domain": "en.wikipedia.org",
   "tags": [
     "research",
     "wiki"
   ],
-  "match": {
-    "keywords": [
-      "wikipedia",
-      "wiki"
-    ],
-    "pattern": "(?:wikipedia|wiki)\\s+(?:about|for|on)\\s+(?<topic>[\\w\\s]+)"
-  },
   "test": {
     "variables": {
       "topic": "India"
@@ -102,5 +95,12 @@
       "result_min_length": 200,
       "max_duration_ms": 15000
     }
+  },
+  "match": {
+    "keywords": [
+      "wikipedia",
+      "wiki"
+    ],
+    "pattern": "(?:wikipedia|wiki)\\s+(?:about|for|on)\\s+(?<topic>[\\w\\s]+)"
   }
 }

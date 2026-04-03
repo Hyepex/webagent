@@ -51,24 +51,16 @@
       }
     }
   ],
-  "success_count": 10,
+  "success_count": 11,
   "fail_count": 0,
-  "avg_duration_ms": 3420,
-  "last_used": "2026-04-03T09:01:39.747Z",
+  "avg_duration_ms": 3336,
+  "last_used": "2026-04-03T09:17:24.171Z",
   "version": 1,
   "domain": "bbc.com",
   "tags": [
     "news",
     "headlines"
   ],
-  "match": {
-    "keywords": [
-      "headlines",
-      "news",
-      "bbc"
-    ],
-    "pattern": "(?:headlines|news|top stories).*(?:from\\s+)?(?:bbc|BBC)?"
-  },
   "test": {
     "variables": {},
     "expect": {
@@ -77,5 +69,13 @@
       "min_lines": 3,
       "max_duration_ms": 20000
     }
+  },
+  "match": {
+    "keywords": [
+      "headlines",
+      "news",
+      "bbc"
+    ],
+    "pattern": "(?:headlines|news|top stories).*(?:from\\s+)?(?:bbc|BBC)?"
   }
 }

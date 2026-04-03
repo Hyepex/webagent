@@ -108,24 +108,16 @@
       }
     }
   ],
-  "success_count": 9,
+  "success_count": 10,
   "fail_count": 0,
-  "avg_duration_ms": 1624,
-  "last_used": "2026-04-03T09:01:47.416Z",
+  "avg_duration_ms": 1611,
+  "last_used": "2026-04-03T09:17:32.312Z",
   "version": 1,
   "domain": "wttr.in",
   "tags": [
     "weather",
     "utilities"
   ],
-  "match": {
-    "keywords": [
-      "weather",
-      "temperature",
-      "forecast"
-    ],
-    "pattern": "(?:weather|temperature|forecast).*(?:in|for|at)\\s+(?<city>[\\w\\s]+)"
-  },
   "test": {
     "variables": {
       "city": "Mumbai"
@@ -135,5 +127,13 @@
       "result_min_length": 20,
       "max_duration_ms": 15000
     }
+  },
+  "match": {
+    "keywords": [
+      "weather",
+      "temperature",
+      "forecast"
+    ],
+    "pattern": "(?:weather|temperature|forecast).*(?:in|for|at)\\s+(?<city>[\\w\\s]+)"
   }
 }

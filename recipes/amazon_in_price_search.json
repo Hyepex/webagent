@@ -51,7 +51,8 @@
         "scope": "[data-component-type='s-search-result']",
         "fields": {
           "title": {
-            "selector": "h2 span",
+            "selector": "h2 a span",
+            "fallback": "h2 span",
             "index": 0
           },
           "price": {
@@ -91,26 +92,16 @@
       }
     }
   ],
-  "success_count": 11,
+  "success_count": 15,
   "fail_count": 0,
-  "avg_duration_ms": 15226,
-  "last_used": "2026-04-03T09:01:36.195Z",
+  "avg_duration_ms": 17533,
+  "last_used": "2026-04-03T09:17:21.614Z",
   "version": 1,
   "domain": "amazon.in",
   "tags": [
     "shopping",
     "price"
   ],
-  "match": {
-    "keywords": [
-      "price",
-      "cheapest",
-      "buy",
-      "cost",
-      "amazon"
-    ],
-    "pattern": "(?:find|search|price|cheapest|buy|cost).*?(?<product>[\\w\\s]+?)(?:\\s+on\\s+amazon|$)"
-  },
   "test": {
     "variables": {
       "product": "iPhone 15"
@@ -121,7 +112,17 @@
       "result_contains": [
         "₹"
       ],
-      "max_duration_ms": 20000
+      "max_duration_ms": 60000
     }
+  },
+  "match": {
+    "keywords": [
+      "price",
+      "cheapest",
+      "buy",
+      "cost",
+      "amazon"
+    ],
+    "pattern": "(?:find|search|price|cheapest|buy|cost).*?(?<product>[\\w\\s]+?)(?:\\s+on\\s+amazon|$)"
   }
 }

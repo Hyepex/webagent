@@ -99,25 +99,16 @@
       }
     }
   ],
-  "success_count": 10,
+  "success_count": 11,
   "fail_count": 0,
-  "avg_duration_ms": 6112,
-  "last_used": "2026-04-03T09:01:45.794Z",
+  "avg_duration_ms": 6150,
+  "last_used": "2026-04-03T09:17:30.755Z",
   "version": 1,
   "domain": "google.com",
   "tags": [
     "travel",
     "flights"
   ],
-  "match": {
-    "keywords": [
-      "flight",
-      "flights",
-      "search",
-      "fly"
-    ],
-    "pattern": "(?:flight|flights|fly|search).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
-  },
   "test": {
     "variables": {
       "origin": "Mumbai",
@@ -134,5 +125,14 @@
       ],
       "max_duration_ms": 60000
     }
+  },
+  "match": {
+    "keywords": [
+      "flight",
+      "flights",
+      "search",
+      "fly"
+    ],
+    "pattern": "(?:flight|flights|fly|search).*(?:from\\s+(?<origin>[\\w\\s]+?)\\s+to\\s+(?<destination>[\\w\\s]+?)(?:\\s|$|\\.|,))"
   }
 }

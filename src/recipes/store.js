@@ -87,6 +87,7 @@ function normalizeRecipe(raw) {
   if (raw.version !== undefined) recipe.version = raw.version;
   if (raw.domain) recipe.domain = raw.domain;
   if (raw.tags) recipe.tags = raw.tags;
+  if (raw.test) recipe.test = raw.test;
 
   // Normalize match block
   if (raw.match && raw.match.pattern) {
